@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
 
+/// For Debugging
 pub struct Disassembler {}
 
 impl Disassembler {
