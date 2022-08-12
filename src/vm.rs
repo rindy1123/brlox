@@ -57,8 +57,26 @@ impl<'a> VM<'a> {
                     self.stack.push(constant);
                     println!("{constant}");
                 }
+                OpCode::OpAdd | OpCode::OpSubtract | OpCode::OpMultiply | OpCode::OpDivide => {
+                    self.binary_operation(instruction)
+                }
             }
         }
+    }
+
+    fn binary_operation(&mut self, binary_operator: &OpCode) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = match binary_operator {
+            OpCode::OpAdd => left + right,
+            OpCode::OpSubtract => left - right,
+            OpCode::OpMultiply => left * right,
+            OpCode::OpDivide => left / right,
+            _ => panic!(
+                "Expected OpAdd, OpSubtract, OpMultiply, OpDivide only. We got {binary_operator:?}."
+            ),
+        };
+        self.stack.push(result);
     }
 }
 
@@ -121,5 +139,61 @@ mod tests {
         vm.run();
         assert_eq!(vm.stack[0], -1.2);
         assert_eq!(vm.ip, 4);
+    }
+
+    mod binary_operation {
+        use super::*;
+
+        #[test]
+        fn test_add() {
+            let chunk = Chunk::new();
+            let mut vm = VM::new(&chunk);
+            vm.stack.push(1.2);
+            vm.stack.push(3.4);
+            vm.binary_operation(&OpCode::OpAdd);
+            assert_eq!(vm.stack[0], 4.6);
+        }
+
+        #[test]
+        fn test_subtract() {
+            let chunk = Chunk::new();
+            let mut vm = VM::new(&chunk);
+            vm.stack.push(1.2);
+            vm.stack.push(3.4);
+            vm.binary_operation(&OpCode::OpSubtract);
+            assert_eq!(vm.stack[0], -2.2);
+        }
+
+        #[test]
+        fn test_multiply() {
+            let chunk = Chunk::new();
+            let mut vm = VM::new(&chunk);
+            vm.stack.push(2.0);
+            vm.stack.push(3.4);
+            vm.binary_operation(&OpCode::OpMultiply);
+            assert_eq!(vm.stack[0], 6.8);
+        }
+
+        #[test]
+        fn test_divide() {
+            let chunk = Chunk::new();
+            let mut vm = VM::new(&chunk);
+            vm.stack.push(6.0);
+            vm.stack.push(2.0);
+            vm.binary_operation(&OpCode::OpDivide);
+            assert_eq!(vm.stack[0], 3.0);
+        }
+
+        #[test]
+        #[should_panic(
+            expected = "Expected OpAdd, OpSubtract, OpMultiply, OpDivide only. We got OpReturn."
+        )]
+        fn test_invalid_opcode() {
+            let chunk = Chunk::new();
+            let mut vm = VM::new(&chunk);
+            vm.stack.push(6.0);
+            vm.stack.push(2.0);
+            vm.binary_operation(&OpCode::OpReturn);
+        }
     }
 }

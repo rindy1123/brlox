@@ -2,6 +2,10 @@
 pub enum OpCode {
     OpReturn,
     OpNegate,
+    OpAdd,
+    OpSubtract,
+    OpMultiply,
+    OpDivide,
     OpConstant { index: usize },
 }
 
