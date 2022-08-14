@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OpCode {
     OpReturn,
     OpNegate,
@@ -11,7 +11,7 @@ pub enum OpCode {
 
 pub type Value = f64;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     pub code: Vec<OpCode>,
     pub constants: Vec<Value>,

@@ -1,10 +1,11 @@
 use crate::{
     chunk::{Chunk, OpCode, Value},
+    compiler::Compiler,
     disassembler,
 };
 
-pub struct VM<'a> {
-    chunk: &'a Chunk,
+pub struct VM {
+    chunk: Chunk,
     // TODO: use pointer
     ip: usize,
     stack: Vec<Value>,
@@ -13,24 +14,23 @@ pub struct VM<'a> {
 const DEBUG: bool = false;
 const STACK_MAX: usize = 256;
 
-impl<'a> VM<'a> {
-    pub fn new(chunk: &'a Chunk) -> VM<'a> {
+impl VM {
+    pub fn new() -> VM {
         VM {
-            chunk,
+            chunk: Chunk::new(),
             ip: 0,
             stack: Vec::with_capacity(STACK_MAX),
         }
     }
 
-    pub fn interpret(mut self) -> InterpretResult {
-        // self.chunk = chunk;
-        // self.ip = chunk.code.as_ptr();
-        self.run()
+    pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
+        Compiler::compile(source);
+        Ok(())
     }
 
-    fn run(&mut self) -> InterpretResult {
+    fn run(&mut self) -> Result<(), InterpretError> {
         loop {
-            let instruction = &self.chunk.code[self.ip];
+            let instruction = &self.chunk.clone().code[self.ip];
             if DEBUG {
                 println!("      ");
                 for slot in self.stack.clone() {
@@ -46,7 +46,7 @@ impl<'a> VM<'a> {
             match instruction {
                 OpCode::OpReturn => {
                     println!("{}", self.stack.pop().unwrap());
-                    return InterpretResult::InterpretOk;
+                    return Ok(());
                 }
                 OpCode::OpNegate => {
                     let negated_value = -self.stack.pop().unwrap();
@@ -80,10 +80,9 @@ impl<'a> VM<'a> {
     }
 }
 
-pub enum InterpretResult {
-    InterpretOk,
-    InterpretCompileError,
-    InterpretRuntimeError,
+pub enum InterpretError {
+    CompileError,
+    RuntimeError,
 }
 
 #[cfg(test)]
@@ -92,24 +91,23 @@ mod tests {
 
     #[test]
     fn test_run_op_constant() {
-        let mut chunk = Chunk::new();
-        let target_constant = chunk.add_constant(1.2);
-        chunk.add_code(
+        let mut vm = VM::new();
+        let target_constant = vm.chunk.add_constant(1.2);
+        vm.chunk.add_code(
             OpCode::OpConstant {
                 index: target_constant,
             },
             1,
         );
         // should be added or target_constant will be poped out of the stack
-        let dummy_constant = chunk.add_constant(3.4);
-        chunk.add_code(
+        let dummy_constant = vm.chunk.add_constant(3.4);
+        vm.chunk.add_code(
             OpCode::OpConstant {
                 index: dummy_constant,
             },
             1,
         );
-        chunk.add_code(OpCode::OpReturn, 1);
-        let mut vm = VM::new(&chunk);
+        vm.chunk.add_code(OpCode::OpReturn, 1);
         vm.run();
         assert_eq!(vm.stack[0], 1.2);
         assert_eq!(vm.ip, 3);
@@ -117,25 +115,24 @@ mod tests {
 
     #[test]
     fn test_run_op_negate() {
-        let mut chunk = Chunk::new();
-        let target_constant = chunk.add_constant(1.2);
-        chunk.add_code(
+        let mut vm = VM::new();
+        let target_constant = vm.chunk.add_constant(1.2);
+        vm.chunk.add_code(
             OpCode::OpConstant {
                 index: target_constant,
             },
             1,
         );
         // should be added or target_constant will be poped out of the stack
-        chunk.add_code(OpCode::OpNegate, 1);
-        let dummy_constant = chunk.add_constant(3.4);
-        chunk.add_code(
+        vm.chunk.add_code(OpCode::OpNegate, 1);
+        let dummy_constant = vm.chunk.add_constant(3.4);
+        vm.chunk.add_code(
             OpCode::OpConstant {
                 index: dummy_constant,
             },
             1,
         );
-        chunk.add_code(OpCode::OpReturn, 1);
-        let mut vm = VM::new(&chunk);
+        vm.chunk.add_code(OpCode::OpReturn, 1);
         vm.run();
         assert_eq!(vm.stack[0], -1.2);
         assert_eq!(vm.ip, 4);
@@ -146,8 +143,7 @@ mod tests {
 
         #[test]
         fn test_add() {
-            let chunk = Chunk::new();
-            let mut vm = VM::new(&chunk);
+            let mut vm = VM::new();
             vm.stack.push(1.2);
             vm.stack.push(3.4);
             vm.binary_operation(&OpCode::OpAdd);
@@ -156,8 +152,7 @@ mod tests {
 
         #[test]
         fn test_subtract() {
-            let chunk = Chunk::new();
-            let mut vm = VM::new(&chunk);
+            let mut vm = VM::new();
             vm.stack.push(1.2);
             vm.stack.push(3.4);
             vm.binary_operation(&OpCode::OpSubtract);
@@ -166,8 +161,7 @@ mod tests {
 
         #[test]
         fn test_multiply() {
-            let chunk = Chunk::new();
-            let mut vm = VM::new(&chunk);
+            let mut vm = VM::new();
             vm.stack.push(2.0);
             vm.stack.push(3.4);
             vm.binary_operation(&OpCode::OpMultiply);
@@ -176,8 +170,7 @@ mod tests {
 
         #[test]
         fn test_divide() {
-            let chunk = Chunk::new();
-            let mut vm = VM::new(&chunk);
+            let mut vm = VM::new();
             vm.stack.push(6.0);
             vm.stack.push(2.0);
             vm.binary_operation(&OpCode::OpDivide);
@@ -189,8 +182,7 @@ mod tests {
             expected = "Expected OpAdd, OpSubtract, OpMultiply, OpDivide only. We got OpReturn."
         )]
         fn test_invalid_opcode() {
-            let chunk = Chunk::new();
-            let mut vm = VM::new(&chunk);
+            let mut vm = VM::new();
             vm.stack.push(6.0);
             vm.stack.push(2.0);
             vm.binary_operation(&OpCode::OpReturn);
