@@ -1,6 +1,6 @@
 use crate::{
     chunk::{Chunk, OpCode, Value},
-    compiler::Compiler,
+    compiler::compile,
     disassembler,
 };
 
@@ -21,11 +21,6 @@ impl VM {
             ip: 0,
             stack: Vec::with_capacity(STACK_MAX),
         }
-    }
-
-    pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
-        Compiler::compile(source);
-        Ok(())
     }
 
     fn run(&mut self) -> Result<(), InterpretError> {
@@ -78,6 +73,17 @@ impl VM {
         };
         self.stack.push(result);
     }
+}
+
+pub fn interpret(vm: &mut VM, source: &str) -> Result<(), InterpretError> {
+    let mut chunk = Chunk::new();
+    if !compile(source, &mut chunk) {
+        return Err(InterpretError::CompileError);
+    }
+
+    vm.chunk = chunk;
+    vm.ip = 0;
+    vm.run()
 }
 
 pub enum InterpretError {

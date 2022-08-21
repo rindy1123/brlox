@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::{env, process::exit};
 
-use vm::{InterpretError, VM};
+use vm::{interpret, InterpretError, VM};
 
 mod chunk;
 mod compiler;
@@ -27,14 +27,14 @@ fn repl() {
             exit(0)
         }
         let line = buffer.trim().to_string();
-        vm.interpret(&line);
+        interpret(&mut vm, &line);
     }
 }
 
 fn run_file(path: &Path) {
     let source = fs::read_to_string(path).unwrap();
     let mut vm = VM::new();
-    if let Err(e) = vm.interpret(&source) {
+    if let Err(e) = interpret(&mut vm, &source) {
         match e {
             InterpretError::CompileError => exit(65),
             InterpretError::RuntimeError => exit(70),

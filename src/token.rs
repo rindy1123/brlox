@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
@@ -15,7 +15,7 @@ impl Token {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
