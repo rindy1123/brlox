@@ -1,6 +1,6 @@
 use crate::token::TokenType;
 
-#[derive(FromPrimitive, Clone)]
+#[derive(FromPrimitive, Clone, Debug, PartialEq)]
 pub enum Precedence {
     None,
     Assignment,
@@ -15,12 +15,14 @@ pub enum Precedence {
     Primary,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct ParseRule {
     pub prefix: Option<ParseFn>,
     pub infix: Option<ParseFn>,
     pub precedence: Precedence,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum ParseFn {
     Grouping,
     Number,
@@ -230,5 +232,21 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
             infix: None,
             precedence: Precedence::None,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_rule() {
+        let expected_parse_rule = ParseRule {
+            prefix: None,
+            infix: None,
+            precedence: Precedence::None,
+        };
+        let result = get_rule(TokenType::RightParen);
+        assert_eq!(result, expected_parse_rule);
     }
 }
