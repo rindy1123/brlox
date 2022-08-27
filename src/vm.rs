@@ -76,10 +76,7 @@ impl VM {
 }
 
 pub fn interpret(vm: &mut VM, source: &str) -> Result<(), InterpretError> {
-    let mut chunk = Chunk::new();
-    if !compile(source, &mut chunk) {
-        return Err(InterpretError::CompileError);
-    }
+    let chunk = compile(source)?;
 
     vm.chunk = chunk;
     vm.ip = 0;

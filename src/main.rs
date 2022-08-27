@@ -1,3 +1,7 @@
+extern crate num;
+#[macro_use]
+extern crate num_derive;
+
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
