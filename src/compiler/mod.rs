@@ -20,5 +20,5 @@ pub fn compile(source: &str) -> Result<Chunk, InterpretError> {
 }
 
 fn end_compiler(current_chunk: &mut Chunk, line: usize) {
-    parser::emit_return(current_chunk, line)
+    parser::chunk_op::emit_return(current_chunk, line)
 }

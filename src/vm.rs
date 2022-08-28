@@ -83,6 +83,7 @@ pub fn interpret(vm: &mut VM, source: &str) -> Result<(), InterpretError> {
     vm.run()
 }
 
+#[derive(Debug)]
 pub enum InterpretError {
     CompileError,
     RuntimeError,

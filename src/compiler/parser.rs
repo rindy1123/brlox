@@ -82,10 +82,18 @@ impl Parser {
         self.parse_precedence(precedence)?;
 
         match operator_type {
-            TokenType::Plus => emit_byte(OpCode::OpAdd, &mut self.chunk, previous_token.line),
-            TokenType::Minus => emit_byte(OpCode::OpSubtract, &mut self.chunk, previous_token.line),
-            TokenType::Star => emit_byte(OpCode::OpMultiply, &mut self.chunk, previous_token.line),
-            TokenType::Slash => emit_byte(OpCode::OpDivide, &mut self.chunk, previous_token.line),
+            TokenType::Plus => {
+                chunk_op::emit_byte(OpCode::OpAdd, &mut self.chunk, previous_token.line)
+            }
+            TokenType::Minus => {
+                chunk_op::emit_byte(OpCode::OpSubtract, &mut self.chunk, previous_token.line)
+            }
+            TokenType::Star => {
+                chunk_op::emit_byte(OpCode::OpMultiply, &mut self.chunk, previous_token.line)
+            }
+            TokenType::Slash => {
+                chunk_op::emit_byte(OpCode::OpDivide, &mut self.chunk, previous_token.line)
+            }
             _ => (),
         }
         Ok(())
@@ -108,7 +116,9 @@ impl Parser {
 
         // Emit the operator instruction
         match operator_type {
-            TokenType::Minus => emit_byte(OpCode::OpNegate, &mut self.chunk, previous_token.line),
+            TokenType::Minus => {
+                chunk_op::emit_byte(OpCode::OpNegate, &mut self.chunk, previous_token.line)
+            }
             _ => (),
         }
         Ok(())
@@ -135,20 +145,78 @@ impl Parser {
     fn number(&mut self) -> Result<(), InterpretError> {
         let token = self.previous.as_ref().unwrap();
         let value = token.lexeme.parse::<Value>().unwrap();
-        emit_constant(value, &mut self.chunk, token.line);
+        chunk_op::emit_constant(value, &mut self.chunk, token.line);
         Ok(())
     }
 }
 
-fn emit_byte(byte: OpCode, current_chunk: &mut Chunk, line: usize) {
-    current_chunk.add_code(byte, line)
+pub mod chunk_op {
+    use super::{Chunk, OpCode, Value};
+
+    pub fn emit_byte(byte: OpCode, current_chunk: &mut Chunk, line: usize) {
+        current_chunk.add_code(byte, line)
+    }
+
+    pub fn emit_constant(value: Value, chunk: &mut Chunk, line: usize) {
+        let constant = chunk.add_constant(value);
+        emit_byte(OpCode::OpConstant { index: constant }, chunk, line)
+    }
+
+    pub fn emit_return(current_chunk: &mut Chunk, line: usize) {
+        emit_byte(OpCode::OpReturn, current_chunk, line)
+    }
 }
 
-fn emit_constant(value: Value, chunk: &mut Chunk, line: usize) {
-    let constant = chunk.add_constant(value);
-    emit_byte(OpCode::OpConstant { index: constant }, chunk, line)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub fn emit_return(current_chunk: &mut Chunk, line: usize) {
-    emit_byte(OpCode::OpReturn, current_chunk, line)
+    #[test]
+    fn test_advance() {
+        let source = Source::new("1 + 1".to_string());
+        let chunk = Chunk::new();
+        let mut parser = Parser::new(source, chunk);
+        let result = parser.advance().unwrap();
+        assert_eq!(result, ());
+    }
+
+    #[test]
+    fn test_expression() {
+        let source = Source::new("1 + 1".to_string());
+        let chunk = Chunk::new();
+        let mut parser = Parser::new(source, chunk);
+        parser.advance().unwrap();
+        let result = parser.expression().unwrap();
+        assert_eq!(result, ());
+    }
+
+    #[test]
+    fn test_expression_failure() {
+        let source = Source::new("+ 1".to_string());
+        let chunk = Chunk::new();
+        let mut parser = Parser::new(source, chunk);
+        parser.advance().unwrap();
+        let result = parser.expression().err();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_consume() {
+        let source = Source::new("1 + 1".to_string());
+        let chunk = Chunk::new();
+        let mut parser = Parser::new(source, chunk);
+        parser.advance().unwrap();
+        let result = parser.consume(TokenType::Number, "".to_string()).unwrap();
+        assert_eq!(result, ());
+    }
+
+    #[test]
+    fn test_consume_failure() {
+        let source = Source::new("1 + 1".to_string());
+        let chunk = Chunk::new();
+        let mut parser = Parser::new(source, chunk);
+        parser.advance().unwrap();
+        let result = parser.consume(TokenType::EOF, "".to_string()).err();
+        assert!(result.is_some());
+    }
 }
