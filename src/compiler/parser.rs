@@ -196,8 +196,8 @@ mod tests {
         let chunk = Chunk::new();
         let mut parser = Parser::new(source, chunk);
         parser.advance().unwrap();
-        let result = parser.expression().err();
-        assert!(result.is_some());
+        let result = parser.expression();
+        assert!(result.is_err());
     }
 
     #[test]
@@ -216,7 +216,7 @@ mod tests {
         let chunk = Chunk::new();
         let mut parser = Parser::new(source, chunk);
         parser.advance().unwrap();
-        let result = parser.consume(TokenType::EOF, "".to_string()).err();
-        assert!(result.is_some());
+        let result = parser.consume(TokenType::EOF, "".to_string());
+        assert!(result.is_err());
     }
 }
