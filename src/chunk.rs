@@ -1,3 +1,5 @@
+use crate::value::Value;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OpCode {
     OpReturn,
@@ -8,8 +10,6 @@ pub enum OpCode {
     OpDivide,
     OpConstant { index: usize },
 }
-
-pub type Value = f64;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -57,9 +57,12 @@ mod tests {
     #[test]
     fn test_add_constant() {
         let mut chunk = Chunk::new();
-        let index1 = chunk.add_constant(1.2);
-        let index2 = chunk.add_constant(8.9);
-        assert_eq!(chunk.constants, vec![1.2, 8.9]);
+        let constant1 = Value::Number(1.2);
+        let constant2 = Value::Number(8.9);
+        let index1 = chunk.add_constant(constant1);
+        let index2 = chunk.add_constant(constant2);
+        assert_eq!(chunk.constants[0].as_number(), 1.2);
+        assert_eq!(chunk.constants[1].as_number(), 8.9);
         assert_eq!(index1, 0);
         assert_eq!(index2, 1);
     }

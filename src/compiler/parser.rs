@@ -1,7 +1,8 @@
 use crate::{
-    chunk::{Chunk, OpCode, Value},
+    chunk::{Chunk, OpCode},
     scan::{self, Source},
     token::{Token, TokenType},
+    value::Value,
     vm::InterpretError,
 };
 
@@ -144,8 +145,8 @@ impl Parser {
 
     fn number(&mut self) -> Result<(), InterpretError> {
         let token = self.previous.as_ref().unwrap();
-        let value = token.lexeme.parse::<Value>().unwrap();
-        chunk_op::emit_constant(value, &mut self.chunk, token.line);
+        let value = token.lexeme.parse::<f64>().unwrap();
+        chunk_op::emit_constant(Value::Number(value), &mut self.chunk, token.line);
         Ok(())
     }
 }

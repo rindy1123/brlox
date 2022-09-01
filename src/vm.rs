@@ -1,7 +1,8 @@
 use crate::{
-    chunk::{Chunk, OpCode, Value},
+    chunk::{Chunk, OpCode},
     compiler::compile,
     disassembler,
+    value::Value,
 };
 
 pub struct VM {
@@ -29,7 +30,7 @@ impl VM {
             if DEBUG {
                 println!("      ");
                 for slot in self.stack.clone() {
-                    println!("[ {} ]", slot);
+                    println!("[ {:?} ]", slot);
                 }
                 disassembler::disassemble_instruction(
                     self.ip,
@@ -40,38 +41,58 @@ impl VM {
             self.ip += 1;
             match instruction {
                 OpCode::OpReturn => {
-                    println!("{}", self.stack.pop().unwrap());
                     return Ok(());
                 }
-                OpCode::OpNegate => {
-                    let negated_value = -self.stack.pop().unwrap();
-                    self.stack.push(negated_value);
-                }
+                OpCode::OpNegate => match self.stack.last().unwrap().clone() {
+                    Value::Number(number) => {
+                        self.stack.pop().unwrap();
+                        self.stack.push(Value::Number(-number));
+                    }
+                    _ => {
+                        self.runtime_error("Operand must be a number.");
+                        return Err(InterpretError::RuntimeError);
+                    }
+                },
                 OpCode::OpConstant { index } => {
-                    let constant = self.chunk.constants[index.clone()];
+                    let constant = self.chunk.constants[index.clone()].clone();
                     self.stack.push(constant);
-                    println!("{constant}");
                 }
                 OpCode::OpAdd | OpCode::OpSubtract | OpCode::OpMultiply | OpCode::OpDivide => {
-                    self.binary_operation(instruction)
+                    self.binary_operation(instruction)?;
                 }
             }
         }
     }
 
-    fn binary_operation(&mut self, binary_operator: &OpCode) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let result = match binary_operator {
-            OpCode::OpAdd => left + right,
-            OpCode::OpSubtract => left - right,
-            OpCode::OpMultiply => left * right,
-            OpCode::OpDivide => left / right,
-            _ => panic!(
-                "Expected OpAdd, OpSubtract, OpMultiply, OpDivide only. We got {binary_operator:?}."
-            ),
-        };
-        self.stack.push(result);
+    fn binary_operation(&mut self, binary_operator: &OpCode) -> Result<(), InterpretError> {
+        let stack_len = self.stack.len();
+        if let (Value::Number(right), Value::Number(left)) = (
+            self.stack[stack_len - 1].clone(),
+            self.stack[stack_len - 2].clone(),
+        ) {
+            self.stack.pop().unwrap();
+            self.stack.pop().unwrap();
+            let result = match binary_operator {
+                OpCode::OpAdd => left + right,
+                OpCode::OpSubtract => left - right,
+                OpCode::OpMultiply => left * right,
+                OpCode::OpDivide => left / right,
+                _ => panic!(
+                    "Expected OpAdd, OpSubtract, OpMultiply, OpDivide only. We got {binary_operator:?}."
+                ),
+            };
+            self.stack.push(Value::Number(result));
+            return Ok(());
+        } else {
+            self.runtime_error("Operands mut be numbers.");
+            return Err(InterpretError::RuntimeError);
+        }
+    }
+
+    fn runtime_error(&self, message: &str) {
+        println!("{}", message);
+        let line = self.chunk.lines[self.ip];
+        eprintln!("[line {}] in script", line)
     }
 }
 
@@ -96,7 +117,7 @@ mod tests {
     #[test]
     fn test_run_op_constant() {
         let mut vm = VM::new();
-        let target_constant = vm.chunk.add_constant(1.2);
+        let target_constant = vm.chunk.add_constant(Value::Number(1.2));
         vm.chunk.add_code(
             OpCode::OpConstant {
                 index: target_constant,
@@ -104,7 +125,7 @@ mod tests {
             1,
         );
         // should be added or target_constant will be poped out of the stack
-        let dummy_constant = vm.chunk.add_constant(3.4);
+        let dummy_constant = vm.chunk.add_constant(Value::Number(3.4));
         vm.chunk.add_code(
             OpCode::OpConstant {
                 index: dummy_constant,
@@ -112,15 +133,15 @@ mod tests {
             1,
         );
         vm.chunk.add_code(OpCode::OpReturn, 1);
-        vm.run();
-        assert_eq!(vm.stack[0], 1.2);
+        vm.run().unwrap();
+        assert_eq!(vm.stack[0].as_number(), 1.2);
         assert_eq!(vm.ip, 3);
     }
 
     #[test]
     fn test_run_op_negate() {
         let mut vm = VM::new();
-        let target_constant = vm.chunk.add_constant(1.2);
+        let target_constant = vm.chunk.add_constant(Value::Number(1.2));
         vm.chunk.add_code(
             OpCode::OpConstant {
                 index: target_constant,
@@ -129,7 +150,7 @@ mod tests {
         );
         // should be added or target_constant will be poped out of the stack
         vm.chunk.add_code(OpCode::OpNegate, 1);
-        let dummy_constant = vm.chunk.add_constant(3.4);
+        let dummy_constant = vm.chunk.add_constant(Value::Number(3.4));
         vm.chunk.add_code(
             OpCode::OpConstant {
                 index: dummy_constant,
@@ -137,8 +158,8 @@ mod tests {
             1,
         );
         vm.chunk.add_code(OpCode::OpReturn, 1);
-        vm.run();
-        assert_eq!(vm.stack[0], -1.2);
+        vm.run().unwrap();
+        assert_eq!(vm.stack[0].as_number(), -1.2);
         assert_eq!(vm.ip, 4);
     }
 
@@ -148,37 +169,37 @@ mod tests {
         #[test]
         fn test_add() {
             let mut vm = VM::new();
-            vm.stack.push(1.2);
-            vm.stack.push(3.4);
-            vm.binary_operation(&OpCode::OpAdd);
-            assert_eq!(vm.stack[0], 4.6);
+            vm.stack.push(Value::Number(1.2));
+            vm.stack.push(Value::Number(3.4));
+            vm.binary_operation(&OpCode::OpAdd).unwrap();
+            assert_eq!(vm.stack[0].as_number(), 4.6);
         }
 
         #[test]
         fn test_subtract() {
             let mut vm = VM::new();
-            vm.stack.push(1.2);
-            vm.stack.push(3.4);
-            vm.binary_operation(&OpCode::OpSubtract);
-            assert_eq!(vm.stack[0], -2.2);
+            vm.stack.push(Value::Number(1.2));
+            vm.stack.push(Value::Number(3.4));
+            vm.binary_operation(&OpCode::OpSubtract).unwrap();
+            assert_eq!(vm.stack[0].as_number(), -2.2);
         }
 
         #[test]
         fn test_multiply() {
             let mut vm = VM::new();
-            vm.stack.push(2.0);
-            vm.stack.push(3.4);
-            vm.binary_operation(&OpCode::OpMultiply);
-            assert_eq!(vm.stack[0], 6.8);
+            vm.stack.push(Value::Number(2.0));
+            vm.stack.push(Value::Number(3.4));
+            vm.binary_operation(&OpCode::OpMultiply).unwrap();
+            assert_eq!(vm.stack[0].as_number(), 6.8);
         }
 
         #[test]
         fn test_divide() {
             let mut vm = VM::new();
-            vm.stack.push(6.0);
-            vm.stack.push(2.0);
-            vm.binary_operation(&OpCode::OpDivide);
-            assert_eq!(vm.stack[0], 3.0);
+            vm.stack.push(Value::Number(6.0));
+            vm.stack.push(Value::Number(2.0));
+            vm.binary_operation(&OpCode::OpDivide).unwrap();
+            assert_eq!(vm.stack[0].as_number(), 3.0);
         }
 
         #[test]
@@ -187,9 +208,9 @@ mod tests {
         )]
         fn test_invalid_opcode() {
             let mut vm = VM::new();
-            vm.stack.push(6.0);
-            vm.stack.push(2.0);
-            vm.binary_operation(&OpCode::OpReturn);
+            vm.stack.push(Value::Number(6.0));
+            vm.stack.push(Value::Number(2.0));
+            vm.binary_operation(&OpCode::OpReturn).unwrap();
         }
     }
 }

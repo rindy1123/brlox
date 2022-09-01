@@ -14,6 +14,7 @@ mod compiler;
 mod disassembler;
 mod scan;
 mod token;
+mod value;
 mod vm;
 
 fn repl() {
