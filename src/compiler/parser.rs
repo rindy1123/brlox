@@ -120,6 +120,9 @@ impl Parser {
             TokenType::Minus => {
                 chunk_op::emit_byte(OpCode::OpNegate, &mut self.chunk, previous_token.line)
             }
+            TokenType::Bang => {
+                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line)
+            }
             _ => (),
         }
         Ok(())
@@ -157,7 +160,7 @@ impl Parser {
             TokenType::False => chunk_op::emit_byte(OpCode::OpFalse, &mut self.chunk, token.line),
             TokenType::Nil => chunk_op::emit_byte(OpCode::OpNil, &mut self.chunk, token.line),
             TokenType::True => chunk_op::emit_byte(OpCode::OpTrue, &mut self.chunk, token.line),
-            _ => panic!("Unexpected literal"),
+            _ => panic!("Expected literal"),
         }
         Ok(())
     }

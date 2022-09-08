@@ -89,7 +89,7 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
             precedence: Precedence::Factor,
         },
         TokenType::Bang => ParseRule {
-            prefix: None,
+            prefix: Some(ParseFn::Unary),
             infix: None,
             precedence: Precedence::None,
         },

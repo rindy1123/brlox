@@ -60,6 +60,10 @@ impl VM {
                 OpCode::OpNil => self.stack.push(Value::Nil),
                 OpCode::OpTrue => self.stack.push(Value::Bool(true)),
                 OpCode::OpFalse => self.stack.push(Value::Bool(false)),
+                OpCode::OpNot => {
+                    let value = self.stack.pop().unwrap();
+                    self.stack.push(Value::Bool(is_falsey(value)));
+                }
                 OpCode::OpAdd | OpCode::OpSubtract | OpCode::OpMultiply | OpCode::OpDivide => {
                     self.binary_operation(instruction)?;
                 }
@@ -99,6 +103,14 @@ impl VM {
     }
 }
 
+fn is_falsey(value: Value) -> bool {
+    match value {
+        Value::Nil => true,
+        Value::Bool(boolean) => !boolean,
+        _ => false,
+    }
+}
+
 pub fn interpret(vm: &mut VM, source: &str) -> Result<(), InterpretError> {
     let chunk = compile(source)?;
 
@@ -116,6 +128,14 @@ pub enum InterpretError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_falsy() {
+        assert!(is_falsey(Value::Nil));
+        assert!(is_falsey(Value::Bool(false)));
+        assert!(!is_falsey(Value::Bool(true)));
+        assert!(!is_falsey(Value::Number(1.0)));
+    }
 
     #[test]
     fn test_run_op_constant() {
