@@ -28,6 +28,7 @@ pub enum ParseFn {
     Number,
     Unary,
     Binary,
+    Literal,
 }
 
 pub fn get_rule(operator_type: TokenType) -> ParseRule {
@@ -158,7 +159,7 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
             precedence: Precedence::None,
         },
         TokenType::False => ParseRule {
-            prefix: None,
+            prefix: Some(ParseFn::Literal),
             infix: None,
             precedence: Precedence::None,
         },
@@ -178,7 +179,7 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
             precedence: Precedence::None,
         },
         TokenType::Nil => ParseRule {
-            prefix: None,
+            prefix: Some(ParseFn::Literal),
             infix: None,
             precedence: Precedence::None,
         },
@@ -208,7 +209,7 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
             precedence: Precedence::None,
         },
         TokenType::True => ParseRule {
-            prefix: None,
+            prefix: Some(ParseFn::Literal),
             infix: None,
             precedence: Precedence::None,
         },

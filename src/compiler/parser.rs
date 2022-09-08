@@ -131,6 +131,7 @@ impl Parser {
             ParseFn::Unary => self.unary(),
             ParseFn::Grouping => self.grouping(),
             ParseFn::Number => self.number(),
+            ParseFn::Literal => self.literal(),
         }
     }
 
@@ -147,6 +148,17 @@ impl Parser {
         let token = self.previous.as_ref().unwrap();
         let value = token.lexeme.parse::<f64>().unwrap();
         chunk_op::emit_constant(Value::Number(value), &mut self.chunk, token.line);
+        Ok(())
+    }
+
+    fn literal(&mut self) -> Result<(), InterpretError> {
+        let token = self.previous.as_ref().unwrap();
+        match token.token_type {
+            TokenType::False => chunk_op::emit_byte(OpCode::OpFalse, &mut self.chunk, token.line),
+            TokenType::Nil => chunk_op::emit_byte(OpCode::OpNil, &mut self.chunk, token.line),
+            TokenType::True => chunk_op::emit_byte(OpCode::OpTrue, &mut self.chunk, token.line),
+            _ => panic!("Unexpected literal"),
+        }
         Ok(())
     }
 }

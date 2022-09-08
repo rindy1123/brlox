@@ -8,6 +8,9 @@ pub enum OpCode {
     OpSubtract,
     OpMultiply,
     OpDivide,
+    OpNil,
+    OpTrue,
+    OpFalse,
     OpConstant { index: usize },
 }
 

@@ -57,6 +57,9 @@ impl VM {
                     let constant = self.chunk.constants[index.clone()].clone();
                     self.stack.push(constant);
                 }
+                OpCode::OpNil => self.stack.push(Value::Nil),
+                OpCode::OpTrue => self.stack.push(Value::Bool(true)),
+                OpCode::OpFalse => self.stack.push(Value::Bool(false)),
                 OpCode::OpAdd | OpCode::OpSubtract | OpCode::OpMultiply | OpCode::OpDivide => {
                     self.binary_operation(instruction)?;
                 }
