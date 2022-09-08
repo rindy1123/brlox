@@ -64,7 +64,17 @@ impl VM {
                     let value = self.stack.pop().unwrap();
                     self.stack.push(Value::Bool(is_falsey(value)));
                 }
-                OpCode::OpAdd | OpCode::OpSubtract | OpCode::OpMultiply | OpCode::OpDivide => {
+                OpCode::OpEqual => {
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.pop().unwrap();
+                    self.stack.push(Value::Bool(left.values_equal(right)));
+                }
+                OpCode::OpAdd
+                | OpCode::OpSubtract
+                | OpCode::OpMultiply
+                | OpCode::OpDivide
+                | OpCode::OpGreater
+                | OpCode::OpLess => {
                     self.binary_operation(instruction)?;
                 }
             }
@@ -80,15 +90,15 @@ impl VM {
             self.stack.pop().unwrap();
             self.stack.pop().unwrap();
             let result = match binary_operator {
-                OpCode::OpAdd => left + right,
-                OpCode::OpSubtract => left - right,
-                OpCode::OpMultiply => left * right,
-                OpCode::OpDivide => left / right,
-                _ => panic!(
-                    "Expected OpAdd, OpSubtract, OpMultiply, OpDivide only. We got {binary_operator:?}."
-                ),
+                OpCode::OpAdd => Value::Number(left + right),
+                OpCode::OpSubtract => Value::Number(left - right),
+                OpCode::OpMultiply => Value::Number(left * right),
+                OpCode::OpDivide => Value::Number(left / right),
+                OpCode::OpGreater => Value::Bool(left > right),
+                OpCode::OpLess => Value::Bool(left < right),
+                _ => panic!("We got {binary_operator:?}."),
             };
-            self.stack.push(Value::Number(result));
+            self.stack.push(result);
             return Ok(());
         } else {
             self.runtime_error("Operands mut be numbers.");
@@ -226,9 +236,7 @@ mod tests {
         }
 
         #[test]
-        #[should_panic(
-            expected = "Expected OpAdd, OpSubtract, OpMultiply, OpDivide only. We got OpReturn."
-        )]
+        #[should_panic(expected = "We got OpReturn.")]
         fn test_invalid_opcode() {
             let mut vm = VM::new();
             vm.stack.push(Value::Number(6.0));

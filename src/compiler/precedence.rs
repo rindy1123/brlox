@@ -95,8 +95,8 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
         },
         TokenType::BangEqual => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Binary),
+            precedence: Precedence::Equality,
         },
         TokenType::Equal => ParseRule {
             prefix: None,
@@ -105,28 +105,28 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
         },
         TokenType::EqualEqual => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Binary),
+            precedence: Precedence::Equality,
         },
         TokenType::Greater => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Binary),
+            precedence: Precedence::Comparison,
         },
         TokenType::GreaterEqual => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Binary),
+            precedence: Precedence::Comparison,
         },
         TokenType::Less => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Binary),
+            precedence: Precedence::Comparison,
         },
         TokenType::LessEqual => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Binary),
+            precedence: Precedence::Comparison,
         },
         TokenType::Identifier => ParseRule {
             prefix: None,

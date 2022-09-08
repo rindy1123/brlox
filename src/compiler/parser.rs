@@ -95,6 +95,27 @@ impl Parser {
             TokenType::Slash => {
                 chunk_op::emit_byte(OpCode::OpDivide, &mut self.chunk, previous_token.line)
             }
+            TokenType::BangEqual => {
+                chunk_op::emit_byte(OpCode::OpEqual, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line);
+            }
+            TokenType::EqualEqual => {
+                chunk_op::emit_byte(OpCode::OpEqual, &mut self.chunk, previous_token.line);
+            }
+            TokenType::Greater => {
+                chunk_op::emit_byte(OpCode::OpGreater, &mut self.chunk, previous_token.line);
+            }
+            TokenType::GreaterEqual => {
+                chunk_op::emit_byte(OpCode::OpLess, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line);
+            }
+            TokenType::Less => {
+                chunk_op::emit_byte(OpCode::OpLess, &mut self.chunk, previous_token.line);
+            }
+            TokenType::LessEqual => {
+                chunk_op::emit_byte(OpCode::OpGreater, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line);
+            }
             _ => (),
         }
         Ok(())

@@ -21,6 +21,15 @@ impl Value {
             _ => panic!("Not number"),
         }
     }
+
+    pub fn values_equal(self, b: Self) -> bool {
+        match (self, b) {
+            (Value::Bool(boolean1), Value::Bool(boolean2)) => boolean1 == boolean2,
+            (Value::Nil, Value::Nil) => true,
+            (Value::Number(num1), Value::Number(num2)) => num1 == num2,
+            (_, _) => false,
+        }
+    }
 }
 
 #[cfg(test)]

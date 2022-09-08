@@ -12,6 +12,9 @@ pub enum OpCode {
     OpTrue,
     OpFalse,
     OpNot,
+    OpEqual,
+    OpGreater,
+    OpLess,
     OpConstant { index: usize },
 }
 
