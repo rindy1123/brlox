@@ -29,6 +29,7 @@ pub enum ParseFn {
     Unary,
     Binary,
     Literal,
+    String,
 }
 
 pub fn get_rule(operator_type: TokenType) -> ParseRule {
@@ -134,7 +135,7 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
             precedence: Precedence::None,
         },
         TokenType::LString => ParseRule {
-            prefix: None,
+            prefix: Some(ParseFn::String),
             infix: None,
             precedence: Precedence::None,
         },

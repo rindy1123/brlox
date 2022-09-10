@@ -156,6 +156,7 @@ impl Parser {
             ParseFn::Grouping => self.grouping(),
             ParseFn::Number => self.number(),
             ParseFn::Literal => self.literal(),
+            ParseFn::String => self.string(),
         }
     }
 
@@ -183,6 +184,17 @@ impl Parser {
             TokenType::True => chunk_op::emit_byte(OpCode::OpTrue, &mut self.chunk, token.line),
             _ => panic!("Expected literal"),
         }
+        Ok(())
+    }
+
+    fn string(&mut self) -> Result<(), InterpretError> {
+        let token = self.previous.as_ref().unwrap();
+        let value = token.lexeme.clone();
+        chunk_op::emit_constant(
+            Value::LString(value[1..value.len() - 1].to_string()),
+            &mut self.chunk,
+            token.line,
+        );
         Ok(())
     }
 }
