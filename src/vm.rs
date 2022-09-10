@@ -83,26 +83,47 @@ impl VM {
 
     fn binary_operation(&mut self, binary_operator: &OpCode) -> Result<(), InterpretError> {
         let stack_len = self.stack.len();
-        if let (Value::Number(right), Value::Number(left)) = (
+        match (
             self.stack[stack_len - 1].clone(),
             self.stack[stack_len - 2].clone(),
         ) {
-            self.stack.pop().unwrap();
-            self.stack.pop().unwrap();
-            let result = match binary_operator {
-                OpCode::OpAdd => Value::Number(left + right),
-                OpCode::OpSubtract => Value::Number(left - right),
-                OpCode::OpMultiply => Value::Number(left * right),
-                OpCode::OpDivide => Value::Number(left / right),
-                OpCode::OpGreater => Value::Bool(left > right),
-                OpCode::OpLess => Value::Bool(left < right),
-                _ => panic!("We got {binary_operator:?}."),
-            };
-            self.stack.push(result);
-            return Ok(());
-        } else {
-            self.runtime_error("Operands mut be numbers.");
-            return Err(InterpretError::RuntimeError);
+            (Value::Number(right), Value::Number(left)) => {
+                self.stack.pop().unwrap();
+                self.stack.pop().unwrap();
+                let result = match binary_operator {
+                    OpCode::OpAdd => Value::Number(left + right),
+                    OpCode::OpSubtract => Value::Number(left - right),
+                    OpCode::OpMultiply => Value::Number(left * right),
+                    OpCode::OpDivide => Value::Number(left / right),
+                    OpCode::OpGreater => Value::Bool(left > right),
+                    OpCode::OpLess => Value::Bool(left < right),
+                    _ => panic!("We got {binary_operator:?}."),
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            (Value::LString(right), Value::LString(left)) => {
+                self.stack.pop().unwrap();
+                self.stack.pop().unwrap();
+                let result = match binary_operator {
+                    OpCode::OpAdd => Value::LString(left + &right),
+                    OpCode::OpSubtract
+                    | OpCode::OpMultiply
+                    | OpCode::OpDivide
+                    | OpCode::OpGreater
+                    | OpCode::OpLess => {
+                        self.runtime_error("You cannot use that operator for strings.");
+                        return Err(InterpretError::RuntimeError);
+                    }
+                    _ => panic!("We got {binary_operator:?}."),
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            (_, _) => {
+                self.runtime_error("Operands must be two numbers or two strings.");
+                return Err(InterpretError::RuntimeError);
+            }
         }
     }
 
@@ -200,12 +221,30 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_add() {
+        fn test_add_num() {
             let mut vm = VM::new();
             vm.stack.push(Value::Number(1.2));
             vm.stack.push(Value::Number(3.4));
             vm.binary_operation(&OpCode::OpAdd).unwrap();
             assert_eq!(vm.stack[0].as_number(), 4.6);
+        }
+
+        #[test]
+        fn test_add_string() {
+            let mut vm = VM::new();
+            vm.stack.push(Value::LString("AAA".to_string()));
+            vm.stack.push(Value::LString("BBB".to_string()));
+            vm.binary_operation(&OpCode::OpAdd).unwrap();
+            assert_eq!(vm.stack[0].as_string(), "AAABBB".to_string());
+        }
+
+        #[test]
+        fn test_add_string_failure() {
+            let mut vm = VM::new();
+            vm.stack.push(Value::LString("AAA".to_string()));
+            vm.stack.push(Value::LString("BBB".to_string()));
+            vm.binary_operation(&OpCode::OpSubtract).unwrap();
+            assert_eq!(vm.stack[0].as_string(), "AAABBB".to_string());
         }
 
         #[test]
