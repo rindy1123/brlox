@@ -69,6 +69,7 @@ impl VM {
                     let left = self.stack.pop().unwrap();
                     self.stack.push(Value::Bool(left.values_equal(right)));
                 }
+                OpCode::OpPrint => self.stack.pop().unwrap().println(),
                 OpCode::OpAdd
                 | OpCode::OpSubtract
                 | OpCode::OpMultiply
@@ -235,15 +236,6 @@ mod tests {
             vm.stack.push(Value::LString("AAA".to_string()));
             vm.stack.push(Value::LString("BBB".to_string()));
             vm.binary_operation(&OpCode::OpAdd).unwrap();
-            assert_eq!(vm.stack[0].as_string(), "AAABBB".to_string());
-        }
-
-        #[test]
-        fn test_add_string_failure() {
-            let mut vm = VM::new();
-            vm.stack.push(Value::LString("AAA".to_string()));
-            vm.stack.push(Value::LString("BBB".to_string()));
-            vm.binary_operation(&OpCode::OpSubtract).unwrap();
             assert_eq!(vm.stack[0].as_string(), "AAABBB".to_string());
         }
 

@@ -15,6 +15,7 @@ pub enum OpCode {
     OpEqual,
     OpGreater,
     OpLess,
+    OpPrint,
     OpConstant { index: usize },
 }
 

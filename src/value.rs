@@ -39,11 +39,38 @@ impl Value {
             (_, _) => false,
         }
     }
+
+    pub fn println(&self) {
+        println!("{}", self.to_string());
+    }
+
+    fn to_string(&self) -> String {
+        match self {
+            Self::Bool(boolean) => boolean.to_string(),
+            Self::Nil => "nil".to_string(),
+            Self::Number(num) => num.to_string(),
+            Self::LString(string) => string.to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_to_string() {
+        let boolean = Value::Bool(false);
+        assert_eq!(boolean.to_string(), "false");
+        let nil = Value::Nil;
+        assert_eq!(nil.to_string(), "nil");
+        let num = Value::Number(1.0);
+        assert_eq!(num.to_string(), "1");
+        let num = Value::Number(1.5);
+        assert_eq!(num.to_string(), "1.5");
+        let string = Value::LString("ABC".to_string());
+        assert_eq!(string.to_string(), "ABC");
+    }
 
     #[test]
     fn test_values_equal_bool() {

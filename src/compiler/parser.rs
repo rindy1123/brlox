@@ -25,13 +25,40 @@ impl Parser {
         }
     }
 
+    pub fn parse(&mut self) -> Result<(), InterpretError> {
+        self.advance()?;
+        while !(self.match_token_type(TokenType::EOF)?) {
+            self.declaration()?;
+        }
+        Ok(())
+    }
+
+    fn declaration(&mut self) -> Result<(), InterpretError> {
+        self.statement()
+    }
+
+    fn statement(&mut self) -> Result<(), InterpretError> {
+        if self.match_token_type(TokenType::Print)? {
+            return self.print_statement();
+        }
+        Ok(())
+    }
+
+    fn print_statement(&mut self) -> Result<(), InterpretError> {
+        self.expression()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(OpCode::OpPrint, &mut self.chunk, previous_token.line);
+        Ok(())
+    }
+
     pub fn advance(&mut self) -> Result<(), InterpretError> {
         self.previous = self.current.clone();
         loop {
             let token = scan::scan_token(&mut self.source);
             self.current = Some(token.clone());
             if let TokenType::Error = token.token_type {
-                self.report_error(token.clone(), token.lexeme)?;
+                self.report_error(token.clone(), &token.lexeme)?;
             } else {
                 return Ok(());
             }
@@ -46,7 +73,7 @@ impl Parser {
         self.advance()?;
         let previous_token = self.previous.clone().unwrap();
         match precedence::get_rule(previous_token.token_type.clone()).prefix {
-            None => self.report_error(previous_token, "Expect expression".to_string())?,
+            None => self.report_error(previous_token, "Expect expression")?,
             Some(prefix_rule) => self.exec_parse_function(prefix_rule)?,
         };
 
@@ -63,11 +90,7 @@ impl Parser {
         Ok(())
     }
 
-    pub fn consume(
-        &mut self,
-        token_type: TokenType,
-        message: String,
-    ) -> Result<(), InterpretError> {
+    pub fn consume(&mut self, token_type: TokenType, message: &str) -> Result<(), InterpretError> {
         let current_token = self.current.clone().unwrap();
         if current_token.token_type == token_type {
             return self.advance();
@@ -123,10 +146,7 @@ impl Parser {
 
     fn grouping(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
-        self.consume(
-            TokenType::RightParen,
-            "Expect ')' after expression.".to_string(),
-        )
+        self.consume(TokenType::RightParen, "Expect ')' after expression.")
     }
 
     fn unary(&mut self) -> Result<(), InterpretError> {
@@ -160,7 +180,7 @@ impl Parser {
         }
     }
 
-    fn report_error(&mut self, token: Token, message: String) -> Result<(), InterpretError> {
+    fn report_error(&mut self, token: Token, message: &str) -> Result<(), InterpretError> {
         let position = match token.token_type {
             TokenType::EOF => "at end".to_string(),
             _ => format!("at '{}'", token.lexeme),
@@ -196,6 +216,18 @@ impl Parser {
             token.line,
         );
         Ok(())
+    }
+
+    fn match_token_type(&mut self, token_type: TokenType) -> Result<bool, InterpretError> {
+        if !self.check(token_type) {
+            return Ok(false);
+        }
+        self.advance()?;
+        Ok(true)
+    }
+
+    fn check(&self, token_type: TokenType) -> bool {
+        self.current.clone().unwrap().token_type == token_type
     }
 }
 
@@ -255,7 +287,7 @@ mod tests {
         let chunk = Chunk::new();
         let mut parser = Parser::new(source, chunk);
         parser.advance().unwrap();
-        let result = parser.consume(TokenType::Number, "".to_string()).unwrap();
+        let result = parser.consume(TokenType::Number, "").unwrap();
         assert_eq!(result, ());
     }
 
@@ -265,7 +297,7 @@ mod tests {
         let chunk = Chunk::new();
         let mut parser = Parser::new(source, chunk);
         parser.advance().unwrap();
-        let result = parser.consume(TokenType::EOF, "".to_string());
+        let result = parser.consume(TokenType::EOF, "");
         assert!(result.is_err());
     }
 }
