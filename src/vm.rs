@@ -161,6 +161,21 @@ pub enum InterpretError {
 mod tests {
     use super::*;
 
+    mod interpret {
+        use std::fs;
+
+        use super::*;
+
+        #[test]
+        fn test_logical_ops() {
+            let path = "samples/logical_ops.lox";
+            let source = fs::read_to_string(path).unwrap();
+            let mut vm = VM::new();
+            let result = interpret(&mut vm, &source);
+            assert!(result.is_ok())
+        }
+    }
+
     #[test]
     fn test_is_falsy() {
         assert!(is_falsey(Value::Nil));

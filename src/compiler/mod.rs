@@ -20,22 +20,3 @@ pub fn compile(source: &str) -> Result<Chunk, InterpretError> {
 fn end_compiler(current_chunk: &mut Chunk, line: usize) {
     parser::chunk_op::emit_return(current_chunk, line)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_compile() {
-        let source = "1 + 1";
-        let result = compile(source);
-        assert!(result.is_ok())
-    }
-
-    #[test]
-    fn test_compile_failure() {
-        let source = "+ 1";
-        let result = compile(source);
-        assert!(result.is_err())
-    }
-}
