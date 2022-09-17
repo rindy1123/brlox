@@ -40,7 +40,16 @@ impl Parser {
     fn statement(&mut self) -> Result<(), InterpretError> {
         if self.match_token_type(TokenType::Print)? {
             return self.print_statement();
+        } else {
+            return self.expression_statement();
         }
+    }
+
+    fn expression_statement(&mut self) -> Result<(), InterpretError> {
+        self.expression()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
         Ok(())
     }
 

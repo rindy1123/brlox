@@ -70,6 +70,9 @@ impl VM {
                     self.stack.push(Value::Bool(left.values_equal(right)));
                 }
                 OpCode::OpPrint => self.stack.pop().unwrap().println(),
+                OpCode::OpPop => {
+                    self.stack.pop();
+                }
                 OpCode::OpAdd
                 | OpCode::OpSubtract
                 | OpCode::OpMultiply
