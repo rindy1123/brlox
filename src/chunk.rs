@@ -17,6 +17,9 @@ pub enum OpCode {
     OpLess,
     OpPrint,
     OpPop,
+    OpDefineGlobal { index: usize },
+    OpGetGlobal { index: usize },
+    OpSetGlobal { index: usize },
     OpConstant { index: usize },
 }
 

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     chunk::{Chunk, OpCode},
     compiler::compile,
@@ -10,6 +12,7 @@ pub struct VM {
     // TODO: use pointer
     ip: usize,
     stack: Vec<Value>,
+    globals: HashMap<String, Value>,
 }
 
 const DEBUG: bool = false;
@@ -21,6 +24,7 @@ impl VM {
             chunk: Chunk::new(),
             ip: 0,
             stack: Vec::with_capacity(STACK_MAX),
+            globals: HashMap::new(),
         }
     }
 
@@ -72,6 +76,36 @@ impl VM {
                 OpCode::OpPrint => self.stack.pop().unwrap().println(),
                 OpCode::OpPop => {
                     self.stack.pop();
+                }
+                OpCode::OpDefineGlobal { index } => {
+                    let name = self.chunk.constants[index.clone()].clone().as_string();
+                    let value = self.stack.last().unwrap();
+                    self.globals.insert(name, value.clone());
+                    self.stack.pop();
+                }
+                OpCode::OpGetGlobal { index } => {
+                    let name = self.chunk.constants[index.clone()].clone().as_string();
+                    match self.globals.get(&name) {
+                        Some(value) => {
+                            self.stack.push(value.clone());
+                        }
+                        _ => {
+                            self.runtime_error(&format!("Undefined variable '{}'", name));
+                            return Err(InterpretError::RuntimeError);
+                        }
+                    }
+                }
+                OpCode::OpSetGlobal { index } => {
+                    let name = self.chunk.constants[index.clone()].clone().as_string();
+                    let value = self.stack.last().unwrap();
+                    match self.globals.insert(name.clone(), value.clone()) {
+                        None => {
+                            self.globals.remove(&name);
+                            self.runtime_error(&format!("Undefined variable '{}'", name));
+                            return Err(InterpretError::RuntimeError);
+                        }
+                        _ => {}
+                    }
                 }
                 OpCode::OpAdd
                 | OpCode::OpSubtract

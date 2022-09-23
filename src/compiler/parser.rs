@@ -34,15 +34,51 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<(), InterpretError> {
+        if self.match_token_type(TokenType::Var)? {
+            return self.var_declaration();
+        }
         self.statement()
+    }
+
+    fn var_declaration(&mut self) -> Result<(), InterpretError> {
+        let global = self.parse_variable("Expect variable name.")?;
+
+        if self.match_token_type(TokenType::Equal)? {
+            self.expression()?;
+        } else {
+            let previous_token = self.previous.clone().unwrap();
+            chunk_op::emit_byte(OpCode::OpNil, &mut self.chunk, previous_token.line);
+        }
+
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+        self.define_variable(global);
+        Ok(())
+    }
+
+    fn parse_variable(&mut self, error_message: &str) -> Result<usize, InterpretError> {
+        self.consume(TokenType::Identifier, error_message)?;
+        let previous_token = self.previous.clone().unwrap();
+        Ok(self.identifier_constant(previous_token))
+    }
+
+    fn identifier_constant(&mut self, name: Token) -> usize {
+        self.chunk.add_constant(Value::LString(name.lexeme))
+    }
+
+    fn define_variable(&mut self, global: usize) {
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(
+            OpCode::OpDefineGlobal { index: global },
+            &mut self.chunk,
+            previous_token.line,
+        );
     }
 
     fn statement(&mut self) -> Result<(), InterpretError> {
         if self.match_token_type(TokenType::Print)? {
             return self.print_statement();
-        } else {
-            return self.expression_statement();
         }
+        self.expression_statement()
     }
 
     fn expression_statement(&mut self) -> Result<(), InterpretError> {
@@ -81,9 +117,10 @@ impl Parser {
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), InterpretError> {
         self.advance()?;
         let previous_token = self.previous.clone().unwrap();
+        let can_assign = precedence.clone() as i32 <= Precedence::Assignment as i32;
         match precedence::get_rule(previous_token.token_type.clone()).prefix {
             None => self.report_error(previous_token, "Expect expression")?,
-            Some(prefix_rule) => self.exec_parse_function(prefix_rule)?,
+            Some(prefix_rule) => self.exec_parse_function(prefix_rule, can_assign)?,
         };
 
         while precedence.clone() as i32
@@ -93,8 +130,13 @@ impl Parser {
             let previous_token = self.previous.clone().unwrap();
             match precedence::get_rule(previous_token.token_type).infix {
                 None => break,
-                Some(infix) => self.exec_parse_function(infix)?,
+                Some(infix) => self.exec_parse_function(infix, can_assign)?,
             };
+        }
+
+        if can_assign && self.match_token_type(TokenType::Equal)? {
+            let previous_token = self.previous.clone().unwrap();
+            self.report_error(previous_token, "Invalid assignment target.")?;
         }
         Ok(())
     }
@@ -178,7 +220,11 @@ impl Parser {
         Ok(())
     }
 
-    fn exec_parse_function(&mut self, function_type: ParseFn) -> Result<(), InterpretError> {
+    fn exec_parse_function(
+        &mut self,
+        function_type: ParseFn,
+        can_assign: bool,
+    ) -> Result<(), InterpretError> {
         match function_type {
             ParseFn::Binary => self.binary(),
             ParseFn::Unary => self.unary(),
@@ -186,6 +232,7 @@ impl Parser {
             ParseFn::Number => self.number(),
             ParseFn::Literal => self.literal(),
             ParseFn::String => self.string(),
+            ParseFn::Variable => self.variable(can_assign),
         }
     }
 
@@ -196,6 +243,31 @@ impl Parser {
         };
         eprintln!("[line {}] Error {}: {}", token.line, position, message);
         Err(InterpretError::CompileError)
+    }
+
+    fn variable(&mut self, can_assign: bool) -> Result<(), InterpretError> {
+        let previous_token = self.previous.clone().unwrap();
+        self.named_variable(previous_token, can_assign)?;
+        Ok(())
+    }
+
+    fn named_variable(&mut self, name: Token, can_assign: bool) -> Result<(), InterpretError> {
+        let arg = self.identifier_constant(name.clone());
+        if can_assign && self.match_token_type(TokenType::Equal)? {
+            self.expression()?;
+            chunk_op::emit_byte(
+                OpCode::OpSetGlobal { index: arg },
+                &mut self.chunk,
+                name.line,
+            );
+        } else {
+            chunk_op::emit_byte(
+                OpCode::OpGetGlobal { index: arg },
+                &mut self.chunk,
+                name.line,
+            );
+        }
+        Ok(())
     }
 
     fn number(&mut self) -> Result<(), InterpretError> {
