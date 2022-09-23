@@ -211,6 +211,15 @@ mod tests {
             let result = interpret(&mut vm, &source);
             assert!(result.is_ok())
         }
+
+        #[test]
+        fn test_variables() {
+            let path = "samples/variables.lox";
+            let source = fs::read_to_string(path).unwrap();
+            let mut vm = VM::new();
+            let result = interpret(&mut vm, &source);
+            assert!(result.is_ok())
+        }
     }
 
     #[test]
