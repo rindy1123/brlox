@@ -95,6 +95,7 @@ impl VM {
                         }
                     }
                 }
+                OpCode::OpGetLocal { index } => self.stack.push(self.stack[*index].clone()),
                 OpCode::OpSetGlobal { index } => {
                     let name = self.chunk.constants[index.clone()].clone().as_string();
                     let value = self.stack.last().unwrap();
@@ -106,6 +107,9 @@ impl VM {
                         }
                         _ => {}
                     }
+                }
+                OpCode::OpSetLocal { index } => {
+                    self.stack[*index] = self.stack.last().unwrap().clone();
                 }
                 OpCode::OpAdd
                 | OpCode::OpSubtract

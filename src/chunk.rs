@@ -20,6 +20,8 @@ pub enum OpCode {
     OpDefineGlobal { index: usize },
     OpGetGlobal { index: usize },
     OpSetGlobal { index: usize },
+    OpGetLocal { index: usize },
+    OpSetLocal { index: usize },
     OpConstant { index: usize },
 }
 

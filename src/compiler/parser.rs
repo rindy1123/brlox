@@ -8,11 +8,40 @@ use crate::{
 
 use super::precedence::{self, ParseFn, Precedence};
 
+struct Env {
+    locals: Vec<Local>,
+    scope_depth: usize,
+    local_count: usize,
+}
+
+impl Env {
+    fn new() -> Env {
+        Env {
+            locals: Vec::new(),
+            scope_depth: 0,
+            local_count: 0,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Local {
+    name: Token,
+    depth: Option<usize>,
+}
+
+impl Local {
+    fn new(name: Token, depth: Option<usize>) -> Local {
+        Local { name, depth }
+    }
+}
+
 pub struct Parser {
     current: Option<Token>,
     pub previous: Option<Token>,
     source: Source,
     pub chunk: Chunk,
+    env: Env,
 }
 
 impl Parser {
@@ -20,6 +49,7 @@ impl Parser {
         Parser {
             current: None,
             previous: None,
+            env: Env::new(),
             source,
             chunk,
         }
@@ -57,8 +87,41 @@ impl Parser {
 
     fn parse_variable(&mut self, error_message: &str) -> Result<usize, InterpretError> {
         self.consume(TokenType::Identifier, error_message)?;
+        self.declare_variable()?;
+        if self.env.scope_depth > 0 {
+            return Ok(0);
+        }
+
         let previous_token = self.previous.clone().unwrap();
         Ok(self.identifier_constant(previous_token))
+    }
+
+    fn declare_variable(&mut self) -> Result<(), InterpretError> {
+        if self.env.scope_depth == 0 {
+            return Ok(());
+        }
+
+        let name = self.previous.clone().unwrap();
+        for local in self.env.locals.iter().rev() {
+            if local.depth.unwrap() < self.env.scope_depth {
+                break;
+            }
+
+            if name.lexeme == local.name.lexeme {
+                self.report_error(
+                    name.clone(),
+                    "Already a variable with this name in this scope.",
+                )?;
+            }
+        }
+        self.add_local(name);
+        Ok(())
+    }
+
+    fn add_local(&mut self, token: Token) {
+        let local = Local::new(token, None);
+        self.env.locals.push(local);
+        self.env.local_count += 1
     }
 
     fn identifier_constant(&mut self, name: Token) -> usize {
@@ -66,6 +129,11 @@ impl Parser {
     }
 
     fn define_variable(&mut self, global: usize) {
+        if self.env.scope_depth > 0 {
+            self.mark_initialized();
+            return;
+        }
+
         let previous_token = self.previous.clone().unwrap();
         chunk_op::emit_byte(
             OpCode::OpDefineGlobal { index: global },
@@ -74,11 +142,43 @@ impl Parser {
         );
     }
 
+    fn mark_initialized(&mut self) {
+        self.env.locals[self.env.local_count - 1].depth = Some(self.env.scope_depth);
+    }
+
     fn statement(&mut self) -> Result<(), InterpretError> {
         if self.match_token_type(TokenType::Print)? {
             return self.print_statement();
+        } else if self.match_token_type(TokenType::LeftBrace)? {
+            self.begin_scope();
+            self.block()?;
+            self.end_scope();
+            return Ok(());
         }
         self.expression_statement()
+    }
+
+    fn begin_scope(&mut self) {
+        self.env.scope_depth += 1
+    }
+
+    fn end_scope(&mut self) {
+        self.env.scope_depth -= 1;
+        let previous_token = self.previous.clone().unwrap();
+        while self.env.local_count > 0
+            && self.env.locals[self.env.local_count - 1].depth.unwrap() > self.env.scope_depth
+        {
+            chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+            self.env.local_count -= 1
+        }
+    }
+
+    fn block(&mut self) -> Result<(), InterpretError> {
+        while !self.check(TokenType::RightBrace) && !self.check(TokenType::EOF) {
+            self.declaration()?;
+        }
+
+        self.consume(TokenType::RightBrace, "Expect '}' after block.")
     }
 
     fn expression_statement(&mut self) -> Result<(), InterpretError> {
@@ -236,7 +336,7 @@ impl Parser {
         }
     }
 
-    fn report_error(&mut self, token: Token, message: &str) -> Result<(), InterpretError> {
+    fn report_error(&self, token: Token, message: &str) -> Result<(), InterpretError> {
         let position = match token.token_type {
             TokenType::EOF => "at end".to_string(),
             _ => format!("at '{}'", token.lexeme),
@@ -252,22 +352,35 @@ impl Parser {
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) -> Result<(), InterpretError> {
-        let arg = self.identifier_constant(name.clone());
+        let arg = self.resolve_local(name.clone())?;
+        let (get_op, set_op) = match arg {
+            None => {
+                let index = self.identifier_constant(name.clone());
+                (OpCode::OpGetGlobal { index }, OpCode::OpSetGlobal { index })
+            }
+            Some(index) => (OpCode::OpGetLocal { index }, OpCode::OpSetLocal { index }),
+        };
         if can_assign && self.match_token_type(TokenType::Equal)? {
             self.expression()?;
-            chunk_op::emit_byte(
-                OpCode::OpSetGlobal { index: arg },
-                &mut self.chunk,
-                name.line,
-            );
+            chunk_op::emit_byte(set_op, &mut self.chunk, name.line);
         } else {
-            chunk_op::emit_byte(
-                OpCode::OpGetGlobal { index: arg },
-                &mut self.chunk,
-                name.line,
-            );
+            chunk_op::emit_byte(get_op, &mut self.chunk, name.line);
         }
         Ok(())
+    }
+
+    fn resolve_local(&mut self, name: Token) -> Result<Option<usize>, InterpretError> {
+        let locals_len = self.env.locals.len();
+        for (i, local) in self.env.locals.iter().rev().enumerate() {
+            if name.lexeme == local.name.lexeme {
+                if let None = local.depth {
+                    self.report_error(name, "Can't read local variable in own initializer")?;
+                }
+                return Ok(Some(locals_len - 1 - i));
+            }
+        }
+
+        Ok(None)
     }
 
     fn number(&mut self) -> Result<(), InterpretError> {

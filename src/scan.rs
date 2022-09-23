@@ -269,23 +269,25 @@ mod tests {
         #[test]
         fn test_single_token() {
             let mut source = Source::new("(".to_string());
-            let expected_token = Token::new(TokenType::LeftParen, "(".to_string(), 1);
-            assert_eq!(scan_token(&mut source), expected_token);
+            let result = scan_token(&mut source);
+            assert_eq!(result.token_type, TokenType::LeftParen);
+            assert_eq!(result.lexeme, "(");
         }
 
         #[test]
         fn test_pair_of_token() {
             let mut source = Source::new("!=".to_string());
-            let expected_token = Token::new(TokenType::BangEqual, "!=".to_string(), 1);
-            assert_eq!(scan_token(&mut source), expected_token);
+            let result = scan_token(&mut source);
+            assert_eq!(result.token_type, TokenType::BangEqual);
+            assert_eq!(result.lexeme, "!=");
         }
 
         #[test]
         fn test_error_token() {
             let mut source = Source::new("エラー".to_string());
-            let expected_token =
-                Token::new(TokenType::Error, "Unexpected character.".to_string(), 1);
-            assert_eq!(scan_token(&mut source), expected_token);
+            let result = scan_token(&mut source);
+            assert_eq!(result.token_type, TokenType::Error);
+            assert_eq!(result.lexeme, "Unexpected character.");
         }
     }
 
@@ -307,13 +309,9 @@ mod tests {
                 current: 10,
                 line: 2,
             };
-            let expected_token = Token {
-                token_type: TokenType::LString,
-                lexeme: "\"abcd\nefg\"".to_string(),
-                line: 2,
-            };
             assert_eq!(source, expected_source);
-            assert_eq!(token, expected_token);
+            assert_eq!(token.token_type, TokenType::LString);
+            assert_eq!(token.lexeme, "\"abcd\nefg\"");
         }
 
         #[test]
@@ -325,12 +323,8 @@ mod tests {
                 line: 1,
             };
             let token = string(&mut source);
-            let expected_token = Token {
-                token_type: TokenType::Error,
-                lexeme: "Unterminated string.".to_string(),
-                line: 1,
-            };
-            assert_eq!(token, expected_token);
+            assert_eq!(token.token_type, TokenType::Error);
+            assert_eq!(token.lexeme, "Unterminated string.");
         }
     }
 
@@ -405,23 +399,15 @@ mod tests {
             line: 2,
         };
         let ret = make_token(&source, TokenType::LeftParen);
-        let expected_token = Token {
-            token_type: TokenType::LeftParen,
-            lexeme: "cde".to_string(),
-            line: 2,
-        };
-        assert_eq!(ret, expected_token);
+        assert_eq!(ret.token_type, TokenType::LeftParen);
+        assert_eq!(ret.lexeme, "cde");
     }
 
     #[test]
     fn test_error_token() {
         let ret = error_token(3, "error");
-        let expected_token = Token {
-            token_type: TokenType::Error,
-            lexeme: "error".to_string(),
-            line: 3,
-        };
-        assert_eq!(ret, expected_token);
+        assert_eq!(ret.token_type, TokenType::Error);
+        assert_eq!(ret.lexeme, "error");
     }
 
     #[test]
@@ -449,15 +435,17 @@ mod tests {
         #[test]
         fn test_integer() {
             let mut source = Source::new("123".to_string());
-            let expected_token = Token::new(TokenType::Number, "123".to_string(), 1);
-            assert_eq!(number(&mut source), expected_token);
+            let result = number(&mut source);
+            assert_eq!(result.token_type, TokenType::Number);
+            assert_eq!(result.lexeme, "123");
         }
 
         #[test]
         fn test_float() {
             let mut source = Source::new("123.456".to_string());
-            let expected_token = Token::new(TokenType::Number, "123.456".to_string(), 1);
-            assert_eq!(number(&mut source), expected_token);
+            let result = number(&mut source);
+            assert_eq!(result.token_type, TokenType::Number);
+            assert_eq!(result.lexeme, "123.456");
         }
     }
 
@@ -497,8 +485,9 @@ mod tests {
     #[test]
     fn test_identifier() {
         let mut source = Source::new("identifier123".to_string());
-        let expected_token = Token::new(TokenType::Identifier, "identifier123".to_string(), 1);
-        assert_eq!(identifier(&mut source), expected_token);
+        let result = identifier(&mut source);
+        assert_eq!(result.token_type, TokenType::Identifier);
+        assert_eq!(result.lexeme, "identifier123");
     }
 
     mod identifier_type {
