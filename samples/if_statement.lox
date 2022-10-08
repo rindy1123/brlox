@@ -1,0 +1,6 @@
+if (false) {
+  print 1;
+} else {
+  print 3;
+}
+print 2;

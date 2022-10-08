@@ -23,6 +23,8 @@ pub enum OpCode {
     OpGetLocal { index: usize },
     OpSetLocal { index: usize },
     OpConstant { index: usize },
+    OpJumpIfFalse { offset: usize },
+    OpJump { offset: usize },
 }
 
 #[derive(Debug, Clone)]

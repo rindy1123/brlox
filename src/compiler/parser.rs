@@ -149,6 +149,8 @@ impl Parser {
     fn statement(&mut self) -> Result<(), InterpretError> {
         if self.match_token_type(TokenType::Print)? {
             return self.print_statement();
+        } else if self.match_token_type(TokenType::If)? {
+            return self.if_statement();
         } else if self.match_token_type(TokenType::LeftBrace)? {
             self.begin_scope();
             self.block()?;
@@ -179,6 +181,42 @@ impl Parser {
         }
 
         self.consume(TokenType::RightBrace, "Expect '}' after block.")
+    }
+
+    fn if_statement(&mut self) -> Result<(), InterpretError> {
+        self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
+        self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+        let then_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.statement()?;
+
+        let else_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
+        self.patch_jump(then_jump);
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        if self.match_token_type(TokenType::Else)? {
+            self.statement()?;
+        }
+        self.patch_jump(else_jump);
+        Ok(())
+    }
+
+    fn emit_jump(&mut self, instruction: OpCode) -> usize {
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(instruction, &mut self.chunk, previous_token.line);
+        self.chunk.code.len() - 1
+    }
+
+    fn patch_jump(&mut self, offset: usize) {
+        let jump = self.chunk.code.len() - 1 - offset;
+        let target = self.chunk.code[offset].clone();
+        self.chunk.code[offset] = match target {
+            OpCode::OpJumpIfFalse { .. } => OpCode::OpJumpIfFalse { offset: jump },
+            OpCode::OpJump { .. } => OpCode::OpJump { offset: jump },
+            _ => panic!("Expected jump op code"),
+        }
     }
 
     fn expression_statement(&mut self) -> Result<(), InterpretError> {

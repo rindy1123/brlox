@@ -111,6 +111,15 @@ impl VM {
                 OpCode::OpSetLocal { index } => {
                     self.stack[*index] = self.stack.last().unwrap().clone();
                 }
+                OpCode::OpJumpIfFalse { offset } => {
+                    let value = self.stack.last().unwrap().clone();
+                    if is_falsey(value) {
+                        self.ip += offset;
+                    }
+                }
+                OpCode::OpJump { offset } => {
+                    self.ip += offset;
+                }
                 OpCode::OpAdd
                 | OpCode::OpSubtract
                 | OpCode::OpMultiply
@@ -219,6 +228,15 @@ mod tests {
         #[test]
         fn test_variables() {
             let path = "samples/variables.lox";
+            let source = fs::read_to_string(path).unwrap();
+            let mut vm = VM::new();
+            let result = interpret(&mut vm, &source);
+            assert!(result.is_ok())
+        }
+
+        #[test]
+        fn test_if_statement() {
+            let path = "samples/if_statement.lox";
             let source = fs::read_to_string(path).unwrap();
             let mut vm = VM::new();
             let result = interpret(&mut vm, &source);
