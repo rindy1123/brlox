@@ -31,6 +31,8 @@ pub enum ParseFn {
     Literal,
     Variable,
     String,
+    And,
+    Or,
 }
 
 pub fn get_rule(operator_type: TokenType) -> ParseRule {
@@ -147,8 +149,8 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
         },
         TokenType::And => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::And),
+            precedence: Precedence::And,
         },
         TokenType::Class => ParseRule {
             prefix: None,
@@ -187,8 +189,8 @@ pub fn get_rule(operator_type: TokenType) -> ParseRule {
         },
         TokenType::Or => ParseRule {
             prefix: None,
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Or),
+            precedence: Precedence::Or,
         },
         TokenType::Print => ParseRule {
             prefix: None,

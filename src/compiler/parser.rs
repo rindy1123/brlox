@@ -371,6 +371,8 @@ impl Parser {
             ParseFn::Literal => self.literal(),
             ParseFn::String => self.string(),
             ParseFn::Variable => self.variable(can_assign),
+            ParseFn::And => self.and(),
+            ParseFn::Or => self.or(),
         }
     }
 
@@ -447,6 +449,29 @@ impl Parser {
             &mut self.chunk,
             token.line,
         );
+        Ok(())
+    }
+
+    fn and(&mut self) -> Result<(), InterpretError> {
+        let end_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
+
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.parse_precedence(Precedence::And)?;
+
+        self.patch_jump(end_jump);
+        Ok(())
+    }
+
+    fn or(&mut self) -> Result<(), InterpretError> {
+        let else_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
+        let end_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
+
+        self.patch_jump(else_jump);
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.parse_precedence(Precedence::Or)?;
+        self.patch_jump(end_jump);
         Ok(())
     }
 

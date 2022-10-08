@@ -1,6 +1,13 @@
-if (false) {
-  print 1;
+var a = "beef" and nil;
+if (a) {
+  print "true";
 } else {
-  print 3;
+  var b = nil or "chicken";
+  if (b) {
+    print "true2";
+  } else {
+    print "false2";
+  }
+  print "false";
 }
-print 2;
+print a;
