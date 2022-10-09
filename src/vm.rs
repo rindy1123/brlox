@@ -219,31 +219,30 @@ mod tests {
 
         use super::*;
 
-        #[test]
-        fn test_logical_ops() {
-            let path = "samples/logical_ops.lox";
+        fn execute_file(path: &str) -> Result<(), InterpretError> {
             let source = fs::read_to_string(path).unwrap();
             let mut vm = VM::new();
-            let result = interpret(&mut vm, &source);
-            assert!(result.is_ok())
+            interpret(&mut vm, &source)
+        }
+
+        #[test]
+        fn test_logical_ops() {
+            assert!(execute_file("samples/logical_ops.lox").is_ok())
         }
 
         #[test]
         fn test_variables() {
-            let path = "samples/variables.lox";
-            let source = fs::read_to_string(path).unwrap();
-            let mut vm = VM::new();
-            let result = interpret(&mut vm, &source);
-            assert!(result.is_ok())
+            assert!(execute_file("samples/variables.lox").is_ok())
         }
 
         #[test]
         fn test_if_statement() {
-            let path = "samples/if_statement.lox";
-            let source = fs::read_to_string(path).unwrap();
-            let mut vm = VM::new();
-            let result = interpret(&mut vm, &source);
-            assert!(result.is_ok())
+            assert!(execute_file("samples/if_statement.lox").is_ok())
+        }
+
+        #[test]
+        fn test_loops() {
+            assert!(execute_file("samples/loops.lox").is_ok())
         }
     }
 

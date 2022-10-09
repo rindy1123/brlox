@@ -153,6 +153,8 @@ impl Parser {
             return self.if_statement();
         } else if self.match_token_type(TokenType::While)? {
             return self.while_statement();
+        } else if self.match_token_type(TokenType::For)? {
+            return self.for_statement();
         } else if self.match_token_type(TokenType::LeftBrace)? {
             self.begin_scope();
             self.block()?;
@@ -183,6 +185,50 @@ impl Parser {
         }
 
         self.consume(TokenType::RightBrace, "Expect '}' after block.")
+    }
+
+    fn for_statement(&mut self) -> Result<(), InterpretError> {
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
+        if self.match_token_type(TokenType::Semicolon)? {
+            // No initializer. Do nothing.
+        } else if self.match_token_type(TokenType::Var)? {
+            self.var_declaration()?;
+        } else {
+            self.expression_statement()?;
+        }
+        let mut loop_start = self.chunk.code.len() - 1;
+        let exit_jump = if !self.match_token_type(TokenType::Semicolon)? {
+            self.expression()?;
+            self.consume(TokenType::Semicolon, "Expect ';' after condition.")?;
+
+            let jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
+            self.emit_pop();
+            Some(jump)
+        } else {
+            None
+        };
+
+        if !self.match_token_type(TokenType::RightParen)? {
+            let body_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
+            let increment_start = self.chunk.code.len() - 1;
+            self.expression()?;
+            self.emit_pop();
+            self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+
+            self.emit_loop(loop_start);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+        self.statement()?;
+
+        self.emit_loop(loop_start);
+        if let Some(jump) = exit_jump {
+            self.patch_jump(jump);
+            self.emit_pop();
+        }
+        self.end_scope();
+        Ok(())
     }
 
     fn while_statement(&mut self) -> Result<(), InterpretError> {
