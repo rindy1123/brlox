@@ -25,6 +25,7 @@ pub enum OpCode {
     OpConstant { index: usize },
     OpJumpIfFalse { offset: usize },
     OpJump { offset: usize },
+    OpLoop { offset: usize },
 }
 
 #[derive(Debug, Clone)]

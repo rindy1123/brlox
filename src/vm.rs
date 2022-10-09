@@ -120,6 +120,9 @@ impl VM {
                 OpCode::OpJump { offset } => {
                     self.ip += offset;
                 }
+                OpCode::OpLoop { offset } => {
+                    self.ip -= offset;
+                }
                 OpCode::OpAdd
                 | OpCode::OpSubtract
                 | OpCode::OpMultiply

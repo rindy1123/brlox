@@ -151,6 +151,8 @@ impl Parser {
             return self.print_statement();
         } else if self.match_token_type(TokenType::If)? {
             return self.if_statement();
+        } else if self.match_token_type(TokenType::While)? {
+            return self.while_statement();
         } else if self.match_token_type(TokenType::LeftBrace)? {
             self.begin_scope();
             self.block()?;
@@ -183,19 +185,42 @@ impl Parser {
         self.consume(TokenType::RightBrace, "Expect '}' after block.")
     }
 
+    fn while_statement(&mut self) -> Result<(), InterpretError> {
+        let loop_start = self.chunk.code.len() - 1;
+        self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
+        self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+        let exit_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
+        self.emit_pop();
+        self.statement()?;
+
+        self.emit_loop(loop_start);
+        self.patch_jump(exit_jump);
+        self.emit_pop();
+        Ok(())
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) {
+        let offset = self.chunk.code.len() - loop_start;
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(
+            OpCode::OpLoop { offset },
+            &mut self.chunk,
+            previous_token.line,
+        );
+    }
+
     fn if_statement(&mut self) -> Result<(), InterpretError> {
         self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
         self.expression()?;
         self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
         let then_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
-        let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.emit_pop();
         self.statement()?;
 
         let else_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
         self.patch_jump(then_jump);
-        let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.emit_pop();
         if self.match_token_type(TokenType::Else)? {
             self.statement()?;
         }
@@ -207,6 +232,11 @@ impl Parser {
         let previous_token = self.previous.clone().unwrap();
         chunk_op::emit_byte(instruction, &mut self.chunk, previous_token.line);
         self.chunk.code.len() - 1
+    }
+
+    fn emit_pop(&mut self) {
+        let previous_token = self.previous.clone().unwrap();
+        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
     }
 
     fn patch_jump(&mut self, offset: usize) {
@@ -222,8 +252,7 @@ impl Parser {
     fn expression_statement(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
         self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
-        let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.emit_pop();
         Ok(())
     }
 
@@ -455,8 +484,7 @@ impl Parser {
     fn and(&mut self) -> Result<(), InterpretError> {
         let end_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
 
-        let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.emit_pop();
         self.parse_precedence(Precedence::And)?;
 
         self.patch_jump(end_jump);
@@ -468,8 +496,7 @@ impl Parser {
         let end_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
 
         self.patch_jump(else_jump);
-        let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        self.emit_pop();
         self.parse_precedence(Precedence::Or)?;
         self.patch_jump(end_jump);
         Ok(())
