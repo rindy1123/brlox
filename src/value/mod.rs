@@ -1,11 +1,16 @@
 use std::fmt::Debug;
 
+use self::object::Obj;
+
+pub mod object;
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Bool(bool),
     Nil,
     Number(f64),
     LString(String),
+    Obj(Obj),
 }
 
 impl Value {
@@ -50,6 +55,7 @@ impl Value {
             Self::Nil => "nil".to_string(),
             Self::Number(num) => num.to_string(),
             Self::LString(string) => string.to_string(),
+            Self::Obj(obj) => obj.to_string(),
         }
     }
 }

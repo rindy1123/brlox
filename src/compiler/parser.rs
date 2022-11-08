@@ -2,7 +2,7 @@ use crate::{
     chunk::{Chunk, OpCode},
     scan::{self, Source},
     token::{Token, TokenType},
-    value::Value,
+    value::{object::ObjFunction, Value},
     vm::InterpretError,
 };
 
@@ -16,12 +16,21 @@ struct Env {
 
 impl Env {
     fn new() -> Env {
+        // TODO: consider TokenType
+        // let token = Token::new(TokenType::EOF, String::new(), 0);
+        // let local = Local::new(token, Some(0));
+        // let locals = vec![local];
         Env {
             locals: Vec::new(),
             scope_depth: 0,
             local_count: 0,
         }
     }
+}
+
+enum FunctionType {
+    Function,
+    Script,
 }
 
 #[derive(Debug)]
@@ -42,6 +51,8 @@ pub struct Parser {
     source: Source,
     pub chunk: Chunk,
     env: Env,
+    pub function: ObjFunction,
+    function_type: FunctionType,
 }
 
 impl Parser {
@@ -50,9 +61,19 @@ impl Parser {
             current: None,
             previous: None,
             env: Env::new(),
+            function_type: FunctionType::Script,
+            function: ObjFunction::new(),
             source,
             chunk,
         }
+    }
+
+    fn current_chunk_as_mut(&mut self) -> &mut Chunk {
+        &mut self.function.chunk
+    }
+
+    fn current_chunk_as_ref(&self) -> &Chunk {
+        &self.function.chunk
     }
 
     pub fn parse(&mut self) -> Result<(), InterpretError> {
@@ -77,7 +98,8 @@ impl Parser {
             self.expression()?;
         } else {
             let previous_token = self.previous.clone().unwrap();
-            chunk_op::emit_byte(OpCode::OpNil, &mut self.chunk, previous_token.line);
+            let chunk = self.current_chunk_as_mut();
+            chunk_op::emit_byte(OpCode::OpNil, chunk, previous_token.line);
         }
 
         self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
@@ -125,7 +147,8 @@ impl Parser {
     }
 
     fn identifier_constant(&mut self, name: Token) -> usize {
-        self.chunk.add_constant(Value::LString(name.lexeme))
+        let chunk = self.current_chunk_as_mut();
+        chunk.add_constant(Value::LString(name.lexeme))
     }
 
     fn define_variable(&mut self, global: usize) {
@@ -135,9 +158,10 @@ impl Parser {
         }
 
         let previous_token = self.previous.clone().unwrap();
+        let chunk = self.current_chunk_as_mut();
         chunk_op::emit_byte(
             OpCode::OpDefineGlobal { index: global },
-            &mut self.chunk,
+            chunk,
             previous_token.line,
         );
     }
@@ -174,7 +198,8 @@ impl Parser {
         while self.env.local_count > 0
             && self.env.locals[self.env.local_count - 1].depth.unwrap() > self.env.scope_depth
         {
-            chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+            let chunk = self.current_chunk_as_mut();
+            chunk_op::emit_byte(OpCode::OpPop, chunk, previous_token.line);
             self.env.local_count -= 1
         }
     }
@@ -197,7 +222,7 @@ impl Parser {
         } else {
             self.expression_statement()?;
         }
-        let mut loop_start = self.chunk.code.len() - 1;
+        let mut loop_start = self.current_chunk_as_ref().code.len() - 1;
         let exit_jump = if !self.match_token_type(TokenType::Semicolon)? {
             self.expression()?;
             self.consume(TokenType::Semicolon, "Expect ';' after condition.")?;
@@ -211,7 +236,7 @@ impl Parser {
 
         if !self.match_token_type(TokenType::RightParen)? {
             let body_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
-            let increment_start = self.chunk.code.len() - 1;
+            let increment_start = self.current_chunk_as_ref().code.len() - 1;
             self.expression()?;
             self.emit_pop();
             self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
@@ -232,7 +257,8 @@ impl Parser {
     }
 
     fn while_statement(&mut self) -> Result<(), InterpretError> {
-        let loop_start = self.chunk.code.len() - 1;
+        let code_size = self.current_chunk_as_ref().code.len();
+        let loop_start = code_size - 1;
         self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
         self.expression()?;
         self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
@@ -247,13 +273,11 @@ impl Parser {
     }
 
     fn emit_loop(&mut self, loop_start: usize) {
-        let offset = self.chunk.code.len() - loop_start;
+        let code_size = self.current_chunk_as_ref().code.len();
+        let offset = code_size - loop_start;
         let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(
-            OpCode::OpLoop { offset },
-            &mut self.chunk,
-            previous_token.line,
-        );
+        let chunk = self.current_chunk_as_mut();
+        chunk_op::emit_byte(OpCode::OpLoop { offset }, chunk, previous_token.line);
     }
 
     fn if_statement(&mut self) -> Result<(), InterpretError> {
@@ -275,20 +299,23 @@ impl Parser {
     }
 
     fn emit_jump(&mut self, instruction: OpCode) -> usize {
-        let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(instruction, &mut self.chunk, previous_token.line);
-        self.chunk.code.len() - 1
+        let line = self.previous.as_ref().unwrap().line;
+        let chunk = self.current_chunk_as_mut();
+        chunk_op::emit_byte(instruction, chunk, line);
+        chunk.code.len() - 1
     }
 
     fn emit_pop(&mut self) {
         let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(OpCode::OpPop, &mut self.chunk, previous_token.line);
+        let chunk = self.current_chunk_as_mut();
+        chunk_op::emit_byte(OpCode::OpPop, chunk, previous_token.line);
     }
 
     fn patch_jump(&mut self, offset: usize) {
-        let jump = self.chunk.code.len() - 1 - offset;
-        let target = self.chunk.code[offset].clone();
-        self.chunk.code[offset] = match target {
+        let code = &mut self.current_chunk_as_mut().code;
+        let jump = code.len() - 1 - offset;
+        let target = code[offset].clone();
+        code[offset] = match target {
             OpCode::OpJumpIfFalse { .. } => OpCode::OpJumpIfFalse { offset: jump },
             OpCode::OpJump { .. } => OpCode::OpJump { offset: jump },
             _ => panic!("Expected jump op code"),
@@ -306,7 +333,8 @@ impl Parser {
         self.expression()?;
         self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
         let previous_token = self.previous.clone().unwrap();
-        chunk_op::emit_byte(OpCode::OpPrint, &mut self.chunk, previous_token.line);
+        let chunk = self.current_chunk_as_mut();
+        chunk_op::emit_byte(OpCode::OpPrint, chunk, previous_token.line);
         Ok(())
     }
 
@@ -369,39 +397,32 @@ impl Parser {
         let precedence = num::FromPrimitive::from_i32(rule.precedence as i32 + 1).unwrap();
         self.parse_precedence(precedence)?;
 
+        let chunk = self.current_chunk_as_mut();
         match operator_type {
-            TokenType::Plus => {
-                chunk_op::emit_byte(OpCode::OpAdd, &mut self.chunk, previous_token.line)
-            }
-            TokenType::Minus => {
-                chunk_op::emit_byte(OpCode::OpSubtract, &mut self.chunk, previous_token.line)
-            }
-            TokenType::Star => {
-                chunk_op::emit_byte(OpCode::OpMultiply, &mut self.chunk, previous_token.line)
-            }
-            TokenType::Slash => {
-                chunk_op::emit_byte(OpCode::OpDivide, &mut self.chunk, previous_token.line)
-            }
+            TokenType::Plus => chunk_op::emit_byte(OpCode::OpAdd, chunk, previous_token.line),
+            TokenType::Minus => chunk_op::emit_byte(OpCode::OpSubtract, chunk, previous_token.line),
+            TokenType::Star => chunk_op::emit_byte(OpCode::OpMultiply, chunk, previous_token.line),
+            TokenType::Slash => chunk_op::emit_byte(OpCode::OpDivide, chunk, previous_token.line),
             TokenType::BangEqual => {
-                chunk_op::emit_byte(OpCode::OpEqual, &mut self.chunk, previous_token.line);
-                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpEqual, chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpNot, chunk, previous_token.line);
             }
             TokenType::EqualEqual => {
-                chunk_op::emit_byte(OpCode::OpEqual, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpEqual, chunk, previous_token.line);
             }
             TokenType::Greater => {
-                chunk_op::emit_byte(OpCode::OpGreater, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpGreater, chunk, previous_token.line);
             }
             TokenType::GreaterEqual => {
-                chunk_op::emit_byte(OpCode::OpLess, &mut self.chunk, previous_token.line);
-                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpLess, chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpNot, chunk, previous_token.line);
             }
             TokenType::Less => {
-                chunk_op::emit_byte(OpCode::OpLess, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpLess, chunk, previous_token.line);
             }
             TokenType::LessEqual => {
-                chunk_op::emit_byte(OpCode::OpGreater, &mut self.chunk, previous_token.line);
-                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpGreater, chunk, previous_token.line);
+                chunk_op::emit_byte(OpCode::OpNot, chunk, previous_token.line);
             }
             _ => (),
         }
@@ -420,14 +441,11 @@ impl Parser {
         // Compile the operand
         self.parse_precedence(Precedence::Unary)?;
 
+        let chunk = self.current_chunk_as_mut();
         // Emit the operator instruction
         match operator_type {
-            TokenType::Minus => {
-                chunk_op::emit_byte(OpCode::OpNegate, &mut self.chunk, previous_token.line)
-            }
-            TokenType::Bang => {
-                chunk_op::emit_byte(OpCode::OpNot, &mut self.chunk, previous_token.line)
-            }
+            TokenType::Minus => chunk_op::emit_byte(OpCode::OpNegate, chunk, previous_token.line),
+            TokenType::Bang => chunk_op::emit_byte(OpCode::OpNot, chunk, previous_token.line),
             _ => (),
         }
         Ok(())
@@ -477,9 +495,11 @@ impl Parser {
         };
         if can_assign && self.match_token_type(TokenType::Equal)? {
             self.expression()?;
-            chunk_op::emit_byte(set_op, &mut self.chunk, name.line);
+            let chunk = self.current_chunk_as_mut();
+            chunk_op::emit_byte(set_op, chunk, name.line);
         } else {
-            chunk_op::emit_byte(get_op, &mut self.chunk, name.line);
+            let chunk = self.current_chunk_as_mut();
+            chunk_op::emit_byte(get_op, chunk, name.line);
         }
         Ok(())
     }
@@ -499,29 +519,32 @@ impl Parser {
     }
 
     fn number(&mut self) -> Result<(), InterpretError> {
-        let token = self.previous.as_ref().unwrap();
+        let token = self.previous.clone().unwrap();
         let value = token.lexeme.parse::<f64>().unwrap();
-        chunk_op::emit_constant(Value::Number(value), &mut self.chunk, token.line);
+        let chunk = self.current_chunk_as_mut();
+        chunk_op::emit_constant(Value::Number(value), chunk, token.line);
         Ok(())
     }
 
     fn literal(&mut self) -> Result<(), InterpretError> {
-        let token = self.previous.as_ref().unwrap();
+        let token = self.previous.clone().unwrap();
+        let chunk = self.current_chunk_as_mut();
         match token.token_type {
-            TokenType::False => chunk_op::emit_byte(OpCode::OpFalse, &mut self.chunk, token.line),
-            TokenType::Nil => chunk_op::emit_byte(OpCode::OpNil, &mut self.chunk, token.line),
-            TokenType::True => chunk_op::emit_byte(OpCode::OpTrue, &mut self.chunk, token.line),
+            TokenType::False => chunk_op::emit_byte(OpCode::OpFalse, chunk, token.line),
+            TokenType::Nil => chunk_op::emit_byte(OpCode::OpNil, chunk, token.line),
+            TokenType::True => chunk_op::emit_byte(OpCode::OpTrue, chunk, token.line),
             _ => panic!("Expected literal"),
         }
         Ok(())
     }
 
     fn string(&mut self) -> Result<(), InterpretError> {
-        let token = self.previous.as_ref().unwrap();
-        let value = token.lexeme.clone();
+        let token = self.previous.clone().unwrap();
+        let value = token.lexeme;
+        let chunk = self.current_chunk_as_mut();
         chunk_op::emit_constant(
             Value::LString(value[1..value.len() - 1].to_string()),
-            &mut self.chunk,
+            chunk,
             token.line,
         );
         Ok(())

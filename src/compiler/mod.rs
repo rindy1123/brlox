@@ -1,20 +1,21 @@
 mod parser;
 mod precedence;
 
-use crate::{chunk::Chunk, disassembler, scan::Source, InterpretError};
+use crate::{chunk::Chunk, disassembler, scan::Source, value::object::ObjFunction, InterpretError};
 use parser::Parser;
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 
-pub fn compile(source: &str) -> Result<Chunk, InterpretError> {
+pub fn compile(source: &str) -> Result<ObjFunction, InterpretError> {
     let source = Source::new(source.to_string());
     let chunk = Chunk::new();
     let mut parser = Parser::new(source, chunk);
     parser.parse()?;
-    end_compiler(&mut parser.chunk, parser.previous.unwrap().line);
+    let mut function = parser.function;
+    end_compiler(&mut function.chunk, parser.previous.unwrap().line);
     if DEBUG {
-        disassembler::Disassembler::disassemble_chunk(&parser.chunk, "code".to_string());
+        disassembler::Disassembler::disassemble_chunk(&function.chunk, "code".to_string());
     }
-    Ok(parser.chunk)
+    Ok(function)
 }
 
 fn end_compiler(current_chunk: &mut Chunk, line: usize) {
