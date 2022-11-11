@@ -78,14 +78,17 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<(), InterpretError> {
         self.advance()?;
-        while !(self.match_token_type(TokenType::EOF)?) {
+        while !self.match_token_type(TokenType::EOF) {
             self.declaration()?;
         }
+        // consume EOF
+        self.advance()?;
         Ok(())
     }
 
     fn declaration(&mut self) -> Result<(), InterpretError> {
-        if self.match_token_type(TokenType::Var)? {
+        if self.match_token_type(TokenType::Var) {
+            self.advance()?;
             return self.var_declaration();
         }
         self.statement()
@@ -94,7 +97,8 @@ impl Parser {
     fn var_declaration(&mut self) -> Result<(), InterpretError> {
         let global = self.parse_variable("Expect variable name.")?;
 
-        if self.match_token_type(TokenType::Equal)? {
+        if self.match_token_type(TokenType::Equal) {
+            self.advance()?;
             self.expression()?;
         } else {
             let previous_token = self.previous.clone().unwrap();
@@ -171,15 +175,20 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<(), InterpretError> {
-        if self.match_token_type(TokenType::Print)? {
+        if self.match_token_type(TokenType::Print) {
+            self.advance()?;
             return self.print_statement();
-        } else if self.match_token_type(TokenType::If)? {
+        } else if self.match_token_type(TokenType::If) {
+            self.advance()?;
             return self.if_statement();
-        } else if self.match_token_type(TokenType::While)? {
+        } else if self.match_token_type(TokenType::While) {
+            self.advance()?;
             return self.while_statement();
-        } else if self.match_token_type(TokenType::For)? {
+        } else if self.match_token_type(TokenType::For) {
+            self.advance()?;
             return self.for_statement();
-        } else if self.match_token_type(TokenType::LeftBrace)? {
+        } else if self.match_token_type(TokenType::LeftBrace) {
+            self.advance()?;
             self.begin_scope();
             self.block()?;
             self.end_scope();
@@ -205,7 +214,9 @@ impl Parser {
     }
 
     fn block(&mut self) -> Result<(), InterpretError> {
-        while !self.check(TokenType::RightBrace) && !self.check(TokenType::EOF) {
+        while !self.match_token_type(TokenType::RightBrace)
+            && !self.match_token_type(TokenType::EOF)
+        {
             self.declaration()?;
         }
 
@@ -215,15 +226,16 @@ impl Parser {
     fn for_statement(&mut self) -> Result<(), InterpretError> {
         self.begin_scope();
         self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
-        if self.match_token_type(TokenType::Semicolon)? {
-            // No initializer. Do nothing.
-        } else if self.match_token_type(TokenType::Var)? {
+        if self.match_token_type(TokenType::Semicolon) {
+            self.advance()?;
+        } else if self.match_token_type(TokenType::Var) {
+            self.advance()?;
             self.var_declaration()?;
         } else {
             self.expression_statement()?;
         }
         let mut loop_start = self.current_chunk_as_ref().code.len() - 1;
-        let exit_jump = if !self.match_token_type(TokenType::Semicolon)? {
+        let exit_jump = if !self.match_token_type(TokenType::Semicolon) {
             self.expression()?;
             self.consume(TokenType::Semicolon, "Expect ';' after condition.")?;
 
@@ -231,10 +243,11 @@ impl Parser {
             self.emit_pop();
             Some(jump)
         } else {
+            self.advance()?;
             None
         };
 
-        if !self.match_token_type(TokenType::RightParen)? {
+        if !self.match_token_type(TokenType::RightParen) {
             let body_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
             let increment_start = self.current_chunk_as_ref().code.len() - 1;
             self.expression()?;
@@ -244,6 +257,8 @@ impl Parser {
             self.emit_loop(loop_start);
             loop_start = increment_start;
             self.patch_jump(body_jump);
+        } else {
+            self.advance()?;
         }
         self.statement()?;
 
@@ -291,7 +306,8 @@ impl Parser {
         let else_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
         self.patch_jump(then_jump);
         self.emit_pop();
-        if self.match_token_type(TokenType::Else)? {
+        if self.match_token_type(TokenType::Else) {
+            self.advance()?;
             self.statement()?;
         }
         self.patch_jump(else_jump);
@@ -338,6 +354,8 @@ impl Parser {
         Ok(())
     }
 
+    /// Consume the next token from self.source.
+    /// self.previous will be the current token and self.current will be the next token.
     pub fn advance(&mut self) -> Result<(), InterpretError> {
         self.previous = self.current.clone();
         let token = scan::scan_token(&mut self.source);
@@ -372,7 +390,8 @@ impl Parser {
             };
         }
 
-        if can_assign && self.match_token_type(TokenType::Equal)? {
+        if can_assign && self.match_token_type(TokenType::Equal) {
+            self.advance()?;
             let previous_token = self.previous.clone().unwrap();
             report_error(previous_token, "Invalid assignment target.")?;
         }
@@ -481,7 +500,8 @@ impl Parser {
             }
             Some(index) => (OpCode::OpGetLocal { index }, OpCode::OpSetLocal { index }),
         };
-        if can_assign && self.match_token_type(TokenType::Equal)? {
+        if can_assign && self.match_token_type(TokenType::Equal) {
+            self.advance()?;
             self.expression()?;
             let chunk = self.current_chunk_as_mut();
             chunk_op::emit_byte(set_op, chunk, name.line);
@@ -559,16 +579,8 @@ impl Parser {
         Ok(())
     }
 
-    fn match_token_type(&mut self, token_type: TokenType) -> Result<bool, InterpretError> {
-        if !self.check(token_type) {
-            return Ok(false);
-        }
-        self.advance()?;
-        Ok(true)
-    }
-
-    fn check(&self, token_type: TokenType) -> bool {
-        self.current.clone().unwrap().token_type == token_type
+    fn match_token_type(&self, token_type: TokenType) -> bool {
+        self.current.as_ref().unwrap().token_type == token_type
     }
 }
 
