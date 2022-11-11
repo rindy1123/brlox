@@ -95,24 +95,37 @@ impl Parser {
     }
 
     fn var_declaration(&mut self) -> Result<(), InterpretError> {
-        let global = self.parse_variable("Expect variable name.")?;
+        let global = self.parse_variable()?;
 
         if self.match_token_type(TokenType::Equal) {
+            // When variable is initialized
             self.advance()?;
             self.expression()?;
         } else {
-            let previous_token = self.previous.clone().unwrap();
+            // When variable is not initialized, variable should hold nil
+            let line = self.previous.as_ref().unwrap().line;
             let chunk = self.current_chunk_as_mut();
-            chunk_op::emit_byte(OpCode::OpNil, chunk, previous_token.line);
+            chunk_op::emit_byte(OpCode::OpNil, chunk, line);
         }
 
-        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+        if !self.match_token_type(TokenType::Semicolon) {
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect ';' after expression.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         self.define_variable(global);
         Ok(())
     }
 
-    fn parse_variable(&mut self, error_message: &str) -> Result<usize, InterpretError> {
-        self.consume(TokenType::Identifier, error_message)?;
+    fn parse_variable(&mut self) -> Result<usize, InterpretError> {
+        if !self.match_token_type(TokenType::Identifier) {
+            report_error(self.current.as_ref().unwrap(), "Expect variable name.");
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         self.declare_variable()?;
         if self.env.scope_depth > 0 {
             return Ok(0);
@@ -134,10 +147,8 @@ impl Parser {
             }
 
             if name.lexeme == local.name.lexeme {
-                report_error(
-                    name.clone(),
-                    "Already a variable with this name in this scope.",
-                )?;
+                report_error(&name, "Already a variable with this name in this scope.");
+                return Err(InterpretError::CompileError);
             }
         }
         self.add_local(name);
@@ -220,12 +231,20 @@ impl Parser {
             self.declaration()?;
         }
 
-        self.consume(TokenType::RightBrace, "Expect '}' after block.")
+        if !self.match_token_type(TokenType::RightBrace) {
+            report_error(self.current.as_ref().unwrap(), "Expect '}' after block.");
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()
     }
 
     fn for_statement(&mut self) -> Result<(), InterpretError> {
         self.begin_scope();
-        self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
+        if !self.match_token_type(TokenType::LeftParen) {
+            report_error(self.current.as_ref().unwrap(), "Expect '(' after if.");
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         if self.match_token_type(TokenType::Semicolon) {
             self.advance()?;
         } else if self.match_token_type(TokenType::Var) {
@@ -237,7 +256,14 @@ impl Parser {
         let mut loop_start = self.current_chunk_as_ref().code.len() - 1;
         let exit_jump = if !self.match_token_type(TokenType::Semicolon) {
             self.expression()?;
-            self.consume(TokenType::Semicolon, "Expect ';' after condition.")?;
+            if !self.match_token_type(TokenType::Semicolon) {
+                report_error(
+                    self.current.as_ref().unwrap(),
+                    "Expect ';' after condition.",
+                );
+                return Err(InterpretError::CompileError);
+            }
+            self.advance()?;
 
             let jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
             self.emit_pop();
@@ -252,7 +278,14 @@ impl Parser {
             let increment_start = self.current_chunk_as_ref().code.len() - 1;
             self.expression()?;
             self.emit_pop();
-            self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+            if !self.match_token_type(TokenType::RightParen) {
+                report_error(
+                    self.current.as_ref().unwrap(),
+                    "Expect ')' after condition.",
+                );
+                return Err(InterpretError::CompileError);
+            }
+            self.advance()?;
 
             self.emit_loop(loop_start);
             loop_start = increment_start;
@@ -274,9 +307,20 @@ impl Parser {
     fn while_statement(&mut self) -> Result<(), InterpretError> {
         let code_size = self.current_chunk_as_ref().code.len();
         let loop_start = code_size - 1;
-        self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
+        if !self.match_token_type(TokenType::LeftParen) {
+            report_error(self.current.as_ref().unwrap(), "Expect '(' after if.");
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         self.expression()?;
-        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+        if !self.match_token_type(TokenType::RightParen) {
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect ')' after condition.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         let exit_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
         self.emit_pop();
         self.statement()?;
@@ -296,9 +340,20 @@ impl Parser {
     }
 
     fn if_statement(&mut self) -> Result<(), InterpretError> {
-        self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
+        if !self.match_token_type(TokenType::LeftParen) {
+            report_error(self.current.as_ref().unwrap(), "Expect '(' after if.");
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         self.expression()?;
-        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+        if !self.match_token_type(TokenType::RightParen) {
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect ')' after condition.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         let then_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
         self.emit_pop();
         self.statement()?;
@@ -340,17 +395,28 @@ impl Parser {
 
     fn expression_statement(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
-        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+        if !self.match_token_type(TokenType::Semicolon) {
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect ';' after expression.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
         self.emit_pop();
         Ok(())
     }
 
     fn print_statement(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
-        self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
-        let previous_token = self.previous.clone().unwrap();
+        if !self.match_token_type(TokenType::Semicolon) {
+            report_error(self.current.as_ref().unwrap(), "Expect ';' after value.");
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
+        let line = self.previous.as_ref().unwrap().line;
         let chunk = self.current_chunk_as_mut();
-        chunk_op::emit_byte(OpCode::OpPrint, chunk, previous_token.line);
+        chunk_op::emit_byte(OpCode::OpPrint, chunk, line);
         Ok(())
     }
 
@@ -360,7 +426,8 @@ impl Parser {
         self.previous = self.current.clone();
         let token = scan::scan_token(&mut self.source);
         if let TokenType::Error = token.token_type {
-            return report_error(token.clone(), &token.lexeme);
+            report_error(&token, &token.lexeme);
+            return Err(InterpretError::CompileError);
         }
         self.current = Some(token);
         Ok(())
@@ -372,10 +439,13 @@ impl Parser {
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), InterpretError> {
         self.advance()?;
-        let previous_token = self.previous.clone().unwrap();
+        let previous_token = self.previous.as_ref().unwrap();
         let can_assign = precedence.clone() as i32 <= Precedence::Assignment as i32;
         match precedence::get_rule(previous_token.token_type.clone()).prefix {
-            None => report_error(previous_token, "Expect expression")?,
+            None => {
+                report_error(previous_token, "Expect expression");
+                return Err(InterpretError::CompileError);
+            }
             Some(prefix_rule) => self.exec_parse_function(prefix_rule, can_assign)?,
         };
 
@@ -392,18 +462,11 @@ impl Parser {
 
         if can_assign && self.match_token_type(TokenType::Equal) {
             self.advance()?;
-            let previous_token = self.previous.clone().unwrap();
-            report_error(previous_token, "Invalid assignment target.")?;
+            let previous_token = self.previous.as_ref().unwrap();
+            report_error(previous_token, "Invalid assignment target.");
+            return Err(InterpretError::CompileError);
         }
         Ok(())
-    }
-
-    pub fn consume(&mut self, token_type: TokenType, message: &str) -> Result<(), InterpretError> {
-        let current_token = self.current.clone().unwrap();
-        if current_token.token_type == token_type {
-            return self.advance();
-        }
-        report_error(current_token, message)
     }
 
     fn binary(&mut self) -> Result<(), InterpretError> {
@@ -447,7 +510,14 @@ impl Parser {
 
     fn grouping(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
-        self.consume(TokenType::RightParen, "Expect ')' after expression.")
+        if !self.match_token_type(TokenType::RightParen) {
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect ')' after expression.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()
     }
 
     fn unary(&mut self) -> Result<(), InterpretError> {
@@ -517,7 +587,8 @@ impl Parser {
         for (i, local) in self.env.locals.iter().rev().enumerate() {
             if name.lexeme == local.name.lexeme {
                 if let None = local.depth {
-                    report_error(name, "Can't read local variable in own initializer")?;
+                    report_error(&name, "Can't read local variable in own initializer");
+                    return Err(InterpretError::CompileError);
                 }
                 return Ok(Some(locals_len - 1 - i));
             }
@@ -601,13 +672,12 @@ pub mod chunk_op {
     }
 }
 
-fn report_error(token: Token, message: &str) -> Result<(), InterpretError> {
+fn report_error(token: &Token, message: &str) {
     let position = match token.token_type {
         TokenType::EOF => "at end".to_string(),
         _ => format!("at '{}'", token.lexeme),
     };
     eprintln!("[line {}] Error {}: {}", token.line, position, message);
-    Err(InterpretError::CompileError)
 }
 
 #[cfg(test)]
@@ -640,26 +710,6 @@ mod tests {
         let mut parser = Parser::new(source, chunk);
         parser.advance().unwrap();
         let result = parser.expression();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_consume() {
-        let source = Source::new("1 + 1".to_string());
-        let chunk = Chunk::new();
-        let mut parser = Parser::new(source, chunk);
-        parser.advance().unwrap();
-        let result = parser.consume(TokenType::Number, "").unwrap();
-        assert_eq!(result, ());
-    }
-
-    #[test]
-    fn test_consume_failure() {
-        let source = Source::new("1 + 1".to_string());
-        let chunk = Chunk::new();
-        let mut parser = Parser::new(source, chunk);
-        parser.advance().unwrap();
-        let result = parser.consume(TokenType::EOF, "");
         assert!(result.is_err());
     }
 }
