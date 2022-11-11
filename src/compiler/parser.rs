@@ -130,7 +130,7 @@ impl Parser {
             }
 
             if name.lexeme == local.name.lexeme {
-                self.report_error(
+                report_error(
                     name.clone(),
                     "Already a variable with this name in this scope.",
                 )?;
@@ -340,15 +340,12 @@ impl Parser {
 
     pub fn advance(&mut self) -> Result<(), InterpretError> {
         self.previous = self.current.clone();
-        loop {
-            let token = scan::scan_token(&mut self.source);
-            self.current = Some(token.clone());
-            if let TokenType::Error = token.token_type {
-                self.report_error(token.clone(), &token.lexeme)?;
-            } else {
-                return Ok(());
-            }
+        let token = scan::scan_token(&mut self.source);
+        if let TokenType::Error = token.token_type {
+            return report_error(token.clone(), &token.lexeme);
         }
+        self.current = Some(token);
+        Ok(())
     }
 
     pub fn expression(&mut self) -> Result<(), InterpretError> {
@@ -360,7 +357,7 @@ impl Parser {
         let previous_token = self.previous.clone().unwrap();
         let can_assign = precedence.clone() as i32 <= Precedence::Assignment as i32;
         match precedence::get_rule(previous_token.token_type.clone()).prefix {
-            None => self.report_error(previous_token, "Expect expression")?,
+            None => report_error(previous_token, "Expect expression")?,
             Some(prefix_rule) => self.exec_parse_function(prefix_rule, can_assign)?,
         };
 
@@ -377,7 +374,7 @@ impl Parser {
 
         if can_assign && self.match_token_type(TokenType::Equal)? {
             let previous_token = self.previous.clone().unwrap();
-            self.report_error(previous_token, "Invalid assignment target.")?;
+            report_error(previous_token, "Invalid assignment target.")?;
         }
         Ok(())
     }
@@ -387,7 +384,7 @@ impl Parser {
         if current_token.token_type == token_type {
             return self.advance();
         }
-        self.report_error(current_token, message)
+        report_error(current_token, message)
     }
 
     fn binary(&mut self) -> Result<(), InterpretError> {
@@ -469,15 +466,6 @@ impl Parser {
         }
     }
 
-    fn report_error(&self, token: Token, message: &str) -> Result<(), InterpretError> {
-        let position = match token.token_type {
-            TokenType::EOF => "at end".to_string(),
-            _ => format!("at '{}'", token.lexeme),
-        };
-        eprintln!("[line {}] Error {}: {}", token.line, position, message);
-        Err(InterpretError::CompileError)
-    }
-
     fn variable(&mut self, can_assign: bool) -> Result<(), InterpretError> {
         let previous_token = self.previous.clone().unwrap();
         self.named_variable(previous_token, can_assign)?;
@@ -509,7 +497,7 @@ impl Parser {
         for (i, local) in self.env.locals.iter().rev().enumerate() {
             if name.lexeme == local.name.lexeme {
                 if let None = local.depth {
-                    self.report_error(name, "Can't read local variable in own initializer")?;
+                    report_error(name, "Can't read local variable in own initializer")?;
                 }
                 return Ok(Some(locals_len - 1 - i));
             }
@@ -599,6 +587,15 @@ pub mod chunk_op {
     pub fn emit_return(current_chunk: &mut Chunk, line: usize) {
         emit_byte(OpCode::OpReturn, current_chunk, line)
     }
+}
+
+fn report_error(token: Token, message: &str) -> Result<(), InterpretError> {
+    let position = match token.token_type {
+        TokenType::EOF => "at end".to_string(),
+        _ => format!("at '{}'", token.lexeme),
+    };
+    eprintln!("[line {}] Error {}: {}", token.line, position, message);
+    Err(InterpretError::CompileError)
 }
 
 #[cfg(test)]
