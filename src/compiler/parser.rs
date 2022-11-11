@@ -94,6 +94,14 @@ impl Parser {
         self.statement()
     }
 
+    /// parse declaration like
+    /// ```
+    /// var a = 1;
+    /// ```
+    /// or
+    /// ```
+    /// var a;
+    /// ```
     fn var_declaration(&mut self) -> Result<(), InterpretError> {
         let global = self.parse_variable()?;
 
