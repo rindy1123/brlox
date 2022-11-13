@@ -139,7 +139,7 @@ impl VM {
                 OpCode::OpJump { offset } => {
                     frame.ip += offset;
                 }
-                OpCode::OpLoop { offset } => {
+                OpCode::OpJumpBack { offset } => {
                     frame.ip -= offset;
                 }
                 OpCode::OpAdd

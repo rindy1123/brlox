@@ -79,14 +79,6 @@ impl Parser {
         }
     }
 
-    fn current_chunk_as_mut(&mut self) -> &mut Chunk {
-        &mut self.function.chunk
-    }
-
-    fn current_chunk_as_ref(&self) -> &Chunk {
-        &self.function.chunk
-    }
-
     pub fn parse(&mut self) -> Result<(), InterpretError> {
         self.advance()?;
         while !self.match_token_type(TokenType::EOF) {
@@ -95,6 +87,14 @@ impl Parser {
         // consume EOF
         self.advance()?;
         Ok(())
+    }
+
+    fn current_chunk_as_mut(&mut self) -> &mut Chunk {
+        &mut self.function.chunk
+    }
+
+    fn current_chunk_as_ref(&self) -> &Chunk {
+        &self.function.chunk
     }
 
     fn declaration(&mut self) -> Result<(), InterpretError> {
@@ -252,12 +252,12 @@ impl Parser {
 
     fn end_scope(&mut self) {
         self.env.scope_depth -= 1;
-        let previous_token = self.previous.clone().unwrap();
+        let line = self.previous.as_ref().unwrap().line;
         while self.env.local_count > 0
             && self.env.locals[self.env.local_count - 1].depth > self.env.scope_depth
         {
             let chunk = self.current_chunk_as_mut();
-            chunk_op::emit_byte(OpCode::OpPop, chunk, previous_token.line);
+            chunk_op::emit_byte(OpCode::OpPop, chunk, line);
             self.env.local_count -= 1
         }
     }
@@ -276,6 +276,13 @@ impl Parser {
         self.advance()
     }
 
+    /// The order of execution in for loop:
+    /// 1. initialization
+    /// 2. condition
+    /// 3. body
+    /// 4. increment
+    ///
+    /// and start again from No.2
     fn for_statement(&mut self) -> Result<(), InterpretError> {
         self.begin_scope();
         if !self.match_token_type(TokenType::LeftParen) {
@@ -283,58 +290,17 @@ impl Parser {
             return Err(InterpretError::CompileError);
         }
         self.advance()?;
-        if self.match_token_type(TokenType::Semicolon) {
-            self.advance()?;
-        } else if self.match_token_type(TokenType::Var) {
-            self.advance()?;
-            self.var_declaration()?;
-        } else {
-            self.expression_statement()?;
-        }
-        let mut loop_start = self.current_chunk_as_ref().code.len() - 1;
-        let exit_jump = if !self.match_token_type(TokenType::Semicolon) {
-            self.expression()?;
-            if !self.match_token_type(TokenType::Semicolon) {
-                report_error(
-                    self.current.as_ref().unwrap(),
-                    "Expect ';' after condition.",
-                );
-                return Err(InterpretError::CompileError);
-            }
-            self.advance()?;
+        self.for_loop_init()?;
+        // For loop restarts after the initialization
+        let loop_start = self.current_chunk_as_ref().code.len() - 1;
+        let loop_exit_jump = self.for_loop_condition()?;
 
-            let jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
-            self.emit_pop();
-            Some(jump)
-        } else {
-            self.advance()?;
-            None
-        };
-
-        if !self.match_token_type(TokenType::RightParen) {
-            let body_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
-            let increment_start = self.current_chunk_as_ref().code.len() - 1;
-            self.expression()?;
-            self.emit_pop();
-            if !self.match_token_type(TokenType::RightParen) {
-                report_error(
-                    self.current.as_ref().unwrap(),
-                    "Expect ')' after condition.",
-                );
-                return Err(InterpretError::CompileError);
-            }
-            self.advance()?;
-
-            self.emit_loop(loop_start);
-            loop_start = increment_start;
-            self.patch_jump(body_jump);
-        } else {
-            self.advance()?;
-        }
+        let jump_after_body = self.for_loop_increment(loop_start)?;
         self.statement()?;
 
-        self.emit_loop(loop_start);
-        if let Some(jump) = exit_jump {
+        // Go back condition or increment clause
+        self.emit_jump_back(jump_after_body);
+        if let Some(jump) = loop_exit_jump {
             self.patch_jump(jump);
             self.emit_pop();
         }
@@ -342,9 +308,89 @@ impl Parser {
         Ok(())
     }
 
+    /// Initialization clause of for loop
+    fn for_loop_init(&mut self) -> Result<(), InterpretError> {
+        match self.current.as_ref().unwrap().token_type {
+            // When omitted
+            TokenType::Semicolon => self.advance()?,
+            // When variable declared
+            TokenType::Var => {
+                self.advance()?;
+                self.var_declaration()?;
+            }
+            // Any other expression
+            _ => self.expression_statement()?,
+        }
+        Ok(())
+    }
+
+    /// Condition clause of for loop.
+    /// If condition expression exists, it returns current chunk's address
+    fn for_loop_condition(&mut self) -> Result<Option<usize>, InterpretError> {
+        if self.match_token_type(TokenType::Semicolon) {
+            self.advance()?;
+            return Ok(None);
+        }
+
+        self.expression()?;
+        if !self.match_token_type(TokenType::Semicolon) {
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect ';' after condition.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
+
+        let jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
+        self.emit_pop();
+        Ok(Some(jump))
+    }
+
+    /// Increment clause of for loop.
+    fn for_loop_increment(&mut self, loop_start: usize) -> Result<usize, InterpretError> {
+        if self.match_token_type(TokenType::RightParen) {
+            self.advance()?;
+            return Ok(loop_start);
+        }
+
+        let body_jump = self.emit_jump(OpCode::OpJump { offset: 0 });
+        let increment_start = self.current_chunk_as_ref().code.len() - 1;
+        self.expression()?;
+        self.emit_pop();
+        if !self.match_token_type(TokenType::RightParen) {
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect ')' after condition.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()?;
+
+        // Back to the condition clause since the loop ends here.
+        self.emit_jump_back(loop_start);
+        // Hop over increment clause to the body of the loop.
+        self.patch_jump(body_jump);
+        // To get back to the increment clause after executing the body,
+        // return the address where increment starts.
+        Ok(increment_start)
+    }
+
     fn while_statement(&mut self) -> Result<(), InterpretError> {
         let code_size = self.current_chunk_as_ref().code.len();
         let loop_start = code_size - 1;
+        self.while_condition()?;
+        let exit_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
+        self.emit_pop();
+        self.statement()?;
+
+        self.emit_jump_back(loop_start);
+        self.patch_jump(exit_jump);
+        self.emit_pop();
+        Ok(())
+    }
+
+    fn while_condition(&mut self) -> Result<(), InterpretError> {
         if !self.match_token_type(TokenType::LeftParen) {
             report_error(self.current.as_ref().unwrap(), "Expect '(' after if.");
             return Err(InterpretError::CompileError);
@@ -358,23 +404,15 @@ impl Parser {
             );
             return Err(InterpretError::CompileError);
         }
-        self.advance()?;
-        let exit_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
-        self.emit_pop();
-        self.statement()?;
-
-        self.emit_loop(loop_start);
-        self.patch_jump(exit_jump);
-        self.emit_pop();
-        Ok(())
+        self.advance()
     }
 
-    fn emit_loop(&mut self, loop_start: usize) {
+    fn emit_jump_back(&mut self, jump_back_address: usize) {
         let code_size = self.current_chunk_as_ref().code.len();
-        let offset = code_size - loop_start;
-        let previous_token = self.previous.clone().unwrap();
+        let offset = code_size - jump_back_address;
+        let line = self.previous.as_ref().unwrap().line;
         let chunk = self.current_chunk_as_mut();
-        chunk_op::emit_byte(OpCode::OpLoop { offset }, chunk, previous_token.line);
+        chunk_op::emit_byte(OpCode::OpJumpBack { offset }, chunk, line);
     }
 
     fn if_statement(&mut self) -> Result<(), InterpretError> {
@@ -415,9 +453,9 @@ impl Parser {
     }
 
     fn emit_pop(&mut self) {
-        let previous_token = self.previous.clone().unwrap();
+        let line = self.previous.as_ref().unwrap().line;
         let chunk = self.current_chunk_as_mut();
-        chunk_op::emit_byte(OpCode::OpPop, chunk, previous_token.line);
+        chunk_op::emit_byte(OpCode::OpPop, chunk, line);
     }
 
     fn patch_jump(&mut self, offset: usize) {
