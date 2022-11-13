@@ -379,7 +379,7 @@ impl Parser {
     fn while_statement(&mut self) -> Result<(), InterpretError> {
         let code_size = self.current_chunk_as_ref().code.len();
         let loop_start = code_size - 1;
-        self.while_condition()?;
+        self.condition()?;
         let exit_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
         self.emit_pop();
         self.statement()?;
@@ -390,9 +390,12 @@ impl Parser {
         Ok(())
     }
 
-    fn while_condition(&mut self) -> Result<(), InterpretError> {
+    fn condition(&mut self) -> Result<(), InterpretError> {
         if !self.match_token_type(TokenType::LeftParen) {
-            report_error(self.current.as_ref().unwrap(), "Expect '(' after if.");
+            report_error(
+                self.current.as_ref().unwrap(),
+                "Expect '(' before condition.",
+            );
             return Err(InterpretError::CompileError);
         }
         self.advance()?;
@@ -416,20 +419,7 @@ impl Parser {
     }
 
     fn if_statement(&mut self) -> Result<(), InterpretError> {
-        if !self.match_token_type(TokenType::LeftParen) {
-            report_error(self.current.as_ref().unwrap(), "Expect '(' after if.");
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
-        self.expression()?;
-        if !self.match_token_type(TokenType::RightParen) {
-            report_error(
-                self.current.as_ref().unwrap(),
-                "Expect ')' after condition.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.condition()?;
         let then_jump = self.emit_jump(OpCode::OpJumpIfFalse { offset: 0 });
         self.emit_pop();
         self.statement()?;
@@ -445,6 +435,7 @@ impl Parser {
         Ok(())
     }
 
+    /// Returns the jump instruction's address to patch the jump instruction later
     fn emit_jump(&mut self, instruction: OpCode) -> usize {
         let line = self.previous.as_ref().unwrap().line;
         let chunk = self.current_chunk_as_mut();
@@ -458,13 +449,15 @@ impl Parser {
         chunk_op::emit_byte(OpCode::OpPop, chunk, line);
     }
 
-    fn patch_jump(&mut self, offset: usize) {
+    /// Patch the jump instruction
+    /// jump_start is the jump instruction's address which emit_jump returns
+    fn patch_jump(&mut self, jump_start: usize) {
         let code = &mut self.current_chunk_as_mut().code;
-        let jump = code.len() - 1 - offset;
-        let target = code[offset].clone();
-        code[offset] = match target {
-            OpCode::OpJumpIfFalse { .. } => OpCode::OpJumpIfFalse { offset: jump },
-            OpCode::OpJump { .. } => OpCode::OpJump { offset: jump },
+        let offset = code.len() - 1 - jump_start;
+        let target = code[jump_start].clone();
+        code[jump_start] = match target {
+            OpCode::OpJumpIfFalse { .. } => OpCode::OpJumpIfFalse { offset },
+            OpCode::OpJump { .. } => OpCode::OpJump { offset },
             _ => panic!("Expected jump op code"),
         }
     }
