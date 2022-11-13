@@ -256,6 +256,11 @@ mod tests {
         }
 
         #[test]
+        fn test_self_reference_variable() {
+            assert!(execute_file("samples/self_reference_variable.lox").is_err())
+        }
+
+        #[test]
         fn test_if_statement() {
             assert!(execute_file("samples/if_statement.lox").is_ok())
         }

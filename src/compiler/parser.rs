@@ -9,7 +9,9 @@ use crate::{
 use super::precedence::{self, ParseFn, Precedence};
 
 struct Env {
+    // Local Variables are stored here
     locals: Vec<Local>,
+    // In global env, scope_depth will be 0
     scope_depth: usize,
     local_count: usize,
 }
@@ -36,12 +38,21 @@ enum FunctionType {
 #[derive(Debug)]
 struct Local {
     name: Token,
-    depth: Option<usize>,
+    /// Env's scope_depth when the local variable is defined.
+    depth: usize,
+    // Just in case the defined local variable is initialized with itself,
+    // it holds whether it's in initialized state or not.
+    // Check out sample/self_reference_variable.lox to see the example.
+    initialized: bool,
 }
 
 impl Local {
-    fn new(name: Token, depth: Option<usize>) -> Local {
-        Local { name, depth }
+    fn new(name: Token, depth: usize) -> Local {
+        Local {
+            name,
+            depth,
+            initialized: false,
+        }
     }
 }
 
@@ -110,7 +121,7 @@ impl Parser {
             self.advance()?;
             self.expression()?;
         } else {
-            // When variable is not initialized, variable should hold nil
+            // If variable is not initialized, variable should hold nil
             let line = self.previous.as_ref().unwrap().line;
             let chunk = self.current_chunk_as_mut();
             chunk_op::emit_byte(OpCode::OpNil, chunk, line);
@@ -124,7 +135,11 @@ impl Parser {
             return Err(InterpretError::CompileError);
         }
         self.advance()?;
-        self.define_variable(global);
+        if Self::is_local(self.env.scope_depth) {
+            self.define_local_variable();
+        } else {
+            self.define_global_variable(global);
+        }
         Ok(())
     }
 
@@ -135,62 +150,71 @@ impl Parser {
         }
         self.advance()?;
         self.declare_variable()?;
-        if self.env.scope_depth > 0 {
+        if Self::is_local(self.env.scope_depth) {
             return Ok(0);
         }
 
-        let previous_token = self.previous.clone().unwrap();
-        Ok(self.identifier_constant(previous_token))
+        let global_variable_name = self.previous.as_ref().unwrap().lexeme.clone();
+        Ok(self.identifier_constant(global_variable_name))
     }
 
     fn declare_variable(&mut self) -> Result<(), InterpretError> {
-        if self.env.scope_depth == 0 {
+        if !Self::is_local(self.env.scope_depth) {
             return Ok(());
         }
 
-        let name = self.previous.clone().unwrap();
+        let name = self.previous.as_ref().unwrap();
+        self.check_variable_already_exists(name)?;
+        self.add_local(name.clone());
+        Ok(())
+    }
+
+    fn check_variable_already_exists(&self, variable_name: &Token) -> Result<(), InterpretError> {
         for local in self.env.locals.iter().rev() {
-            if local.depth.unwrap() < self.env.scope_depth {
+            if local.depth < self.env.scope_depth {
                 break;
             }
 
-            if name.lexeme == local.name.lexeme {
-                report_error(&name, "Already a variable with this name in this scope.");
+            if variable_name.lexeme == local.name.lexeme {
+                report_error(
+                    variable_name,
+                    "Already a variable with this name in this scope.",
+                );
                 return Err(InterpretError::CompileError);
             }
         }
-        self.add_local(name);
         Ok(())
     }
 
     fn add_local(&mut self, token: Token) {
-        let local = Local::new(token, None);
+        let local = Local::new(token, self.env.scope_depth);
         self.env.locals.push(local);
         self.env.local_count += 1
     }
 
-    fn identifier_constant(&mut self, name: Token) -> usize {
+    // TODO: refactor
+    fn identifier_constant(&mut self, name: String) -> usize {
         let chunk = self.current_chunk_as_mut();
-        chunk.add_constant(Value::LString(name.lexeme))
+        chunk.add_constant(Value::LString(name))
     }
 
-    fn define_variable(&mut self, global: usize) {
-        if self.env.scope_depth > 0 {
-            self.mark_initialized();
-            return;
-        }
+    fn define_local_variable(&mut self) {
+        self.mark_initialized();
+    }
 
-        let previous_token = self.previous.clone().unwrap();
+    fn define_global_variable(&mut self, global: usize) {
+        let line = self.previous.as_ref().unwrap().line;
         let chunk = self.current_chunk_as_mut();
-        chunk_op::emit_byte(
-            OpCode::OpDefineGlobal { index: global },
-            chunk,
-            previous_token.line,
-        );
+        chunk_op::emit_byte(OpCode::OpDefineGlobal { index: global }, chunk, line);
     }
 
     fn mark_initialized(&mut self) {
-        self.env.locals[self.env.local_count - 1].depth = Some(self.env.scope_depth);
+        let mut initialized_local_variable = &mut self.env.locals[self.env.local_count - 1];
+        initialized_local_variable.initialized = true;
+    }
+
+    fn is_local(scope_depth: usize) -> bool {
+        scope_depth > 0
     }
 
     fn statement(&mut self) -> Result<(), InterpretError> {
@@ -224,7 +248,7 @@ impl Parser {
         self.env.scope_depth -= 1;
         let previous_token = self.previous.clone().unwrap();
         while self.env.local_count > 0
-            && self.env.locals[self.env.local_count - 1].depth.unwrap() > self.env.scope_depth
+            && self.env.locals[self.env.local_count - 1].depth > self.env.scope_depth
         {
             let chunk = self.current_chunk_as_mut();
             chunk_op::emit_byte(OpCode::OpPop, chunk, previous_token.line);
@@ -573,7 +597,7 @@ impl Parser {
         let arg = self.resolve_local(name.clone())?;
         let (get_op, set_op) = match arg {
             None => {
-                let index = self.identifier_constant(name.clone());
+                let index = self.identifier_constant(name.lexeme);
                 (OpCode::OpGetGlobal { index }, OpCode::OpSetGlobal { index })
             }
             Some(index) => (OpCode::OpGetLocal { index }, OpCode::OpSetLocal { index }),
@@ -594,7 +618,7 @@ impl Parser {
         let locals_len = self.env.locals.len();
         for (i, local) in self.env.locals.iter().rev().enumerate() {
             if name.lexeme == local.name.lexeme {
-                if let None = local.depth {
+                if !local.initialized {
                     report_error(&name, "Can't read local variable in own initializer");
                     return Err(InterpretError::CompileError);
                 }
