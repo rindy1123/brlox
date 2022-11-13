@@ -218,26 +218,32 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<(), InterpretError> {
-        if self.match_token_type(TokenType::Print) {
-            self.advance()?;
-            return self.print_statement();
-        } else if self.match_token_type(TokenType::If) {
-            self.advance()?;
-            return self.if_statement();
-        } else if self.match_token_type(TokenType::While) {
-            self.advance()?;
-            return self.while_statement();
-        } else if self.match_token_type(TokenType::For) {
-            self.advance()?;
-            return self.for_statement();
-        } else if self.match_token_type(TokenType::LeftBrace) {
-            self.advance()?;
-            self.begin_scope();
-            self.block()?;
-            self.end_scope();
-            return Ok(());
+        match self.current.as_ref().unwrap().token_type {
+            TokenType::Print => {
+                self.advance()?;
+                self.print_statement()
+            }
+            TokenType::If => {
+                self.advance()?;
+                self.if_statement()
+            }
+            TokenType::While => {
+                self.advance()?;
+                self.while_statement()
+            }
+            TokenType::For => {
+                self.advance()?;
+                self.for_statement()
+            }
+            TokenType::LeftBrace => {
+                self.advance()?;
+                self.begin_scope();
+                self.block()?;
+                self.end_scope();
+                Ok(())
+            }
+            _ => self.expression_statement(),
         }
-        self.expression_statement()
     }
 
     fn begin_scope(&mut self) {
