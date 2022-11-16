@@ -14,13 +14,6 @@ pub enum Value {
 }
 
 impl Value {
-    fn as_bool(&self) -> bool {
-        match self {
-            Value::Bool(boolean) => *boolean,
-            _ => panic!("Not boolean"),
-        }
-    }
-
     pub fn as_number(&self) -> f64 {
         match self {
             Value::Number(number) => *number,

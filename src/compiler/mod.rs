@@ -9,8 +9,7 @@ pub fn compile(source: &str) -> Result<ObjFunction, InterpretError> {
     let source = Source::new(source.to_string());
     let chunk = Chunk::new();
     let mut parser = Parser::new(source, chunk);
-    parser.parse()?;
-    let mut function = parser.function;
+    let mut function = parser.parse()?;
     end_compiler(&mut function.chunk, parser.previous.unwrap().line);
     if DEBUG {
         disassembler::Disassembler::disassemble_chunk(&function.chunk, "code".to_string());

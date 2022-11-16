@@ -79,14 +79,14 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<(), InterpretError> {
+    pub fn parse(&mut self) -> Result<ObjFunction, InterpretError> {
         self.advance()?;
         while !self.match_token_type(TokenType::EOF) {
             self.declaration()?;
         }
         // consume EOF
         self.advance()?;
-        Ok(())
+        Ok(self.function.clone())
     }
 
     fn current_chunk_as_mut(&mut self) -> &mut Chunk {
