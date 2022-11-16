@@ -1,6 +1,6 @@
 use crate::token::TokenType;
 
-#[derive(FromPrimitive, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Precedence {
     None,
     Assignment,
@@ -13,6 +13,24 @@ pub enum Precedence {
     Unary,
     Call,
     Primary,
+}
+
+impl Precedence {
+    pub fn next(&self) -> Self {
+        match self {
+            Self::None => Self::Assignment,
+            Self::Assignment => Self::Or,
+            Self::Or => Self::And,
+            Self::And => Self::Equality,
+            Self::Equality => Self::Comparison,
+            Self::Comparison => Self::Term,
+            Self::Term => Self::Factor,
+            Self::Factor => Self::Unary,
+            Self::Unary => Self::Call,
+            Self::Call => Self::Primary,
+            Self::Primary => panic!("There is no next precedence"),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -35,7 +53,7 @@ pub enum ParseFn {
     Or,
 }
 
-pub fn get_rule(operator_type: TokenType) -> ParseRule {
+pub fn get_rule(operator_type: &TokenType) -> ParseRule {
     match operator_type {
         TokenType::LeftParen => ParseRule {
             prefix: Some(ParseFn::Grouping),
@@ -251,7 +269,7 @@ mod tests {
             infix: None,
             precedence: Precedence::None,
         };
-        let result = get_rule(TokenType::RightParen);
+        let result = get_rule(&TokenType::RightParen);
         assert_eq!(result, expected_parse_rule);
     }
 }

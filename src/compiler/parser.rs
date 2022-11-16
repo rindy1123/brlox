@@ -491,7 +491,7 @@ impl Parser {
 
     /// Consume the next token from self.source.
     /// self.previous will be the current token and self.current will be the next token.
-    pub fn advance(&mut self) -> Result<(), InterpretError> {
+    fn advance(&mut self) -> Result<(), InterpretError> {
         self.previous = self.current.clone();
         let token = scan::scan_token(&mut self.source);
         if let TokenType::Error = token.token_type {
@@ -502,15 +502,15 @@ impl Parser {
         Ok(())
     }
 
-    pub fn expression(&mut self) -> Result<(), InterpretError> {
+    fn expression(&mut self) -> Result<(), InterpretError> {
         self.parse_precedence(Precedence::Assignment)
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), InterpretError> {
         self.advance()?;
         let previous_token = self.previous.as_ref().unwrap();
-        let can_assign = precedence.clone() as i32 <= Precedence::Assignment as i32;
-        match precedence::get_rule(previous_token.token_type.clone()).prefix {
+        let can_assign = precedence.clone() as u32 <= Precedence::Assignment as u32;
+        match precedence::get_rule(&previous_token.token_type).prefix {
             None => {
                 report_error(previous_token, "Expect expression");
                 return Err(InterpretError::CompileError);
@@ -518,12 +518,12 @@ impl Parser {
             Some(prefix_rule) => self.exec_parse_function(prefix_rule, can_assign)?,
         };
 
-        while precedence.clone() as i32
-            <= precedence::get_rule(self.current.clone().unwrap().token_type).precedence as i32
+        while precedence.clone() as u32
+            <= precedence::get_rule(&self.current.as_ref().unwrap().token_type).precedence as u32
         {
             self.advance()?;
-            let previous_token = self.previous.clone().unwrap();
-            match precedence::get_rule(previous_token.token_type).infix {
+            let previous_token_type = &self.previous.as_ref().unwrap().token_type;
+            match precedence::get_rule(previous_token_type).infix {
                 None => break,
                 Some(infix) => self.exec_parse_function(infix, can_assign)?,
             };
@@ -541,8 +541,8 @@ impl Parser {
     fn binary(&mut self) -> Result<(), InterpretError> {
         let previous_token = self.previous.clone().unwrap();
         let operator_type = previous_token.token_type;
-        let rule = precedence::get_rule(operator_type.clone());
-        let precedence = num::FromPrimitive::from_i32(rule.precedence as i32 + 1).unwrap();
+        let rule = precedence::get_rule(&operator_type);
+        let precedence = rule.precedence.next();
         self.parse_precedence(precedence)?;
 
         let chunk = self.current_chunk_as_mut();
