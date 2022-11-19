@@ -15,9 +15,9 @@ impl Obj {
 
 #[derive(Debug, Clone)]
 pub struct ObjFunction {
-    name: String,
+    pub name: String,
     pub chunk: Chunk,
-    arity: usize,
+    pub arity: usize,
 }
 
 impl ObjFunction {

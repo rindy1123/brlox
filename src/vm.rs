@@ -269,6 +269,11 @@ mod tests {
         fn test_loops() {
             assert!(execute_file("samples/loops.lox").is_ok())
         }
+
+        #[test]
+        fn test_function() {
+            assert!(execute_file("samples/function.lox").is_ok())
+        }
     }
 
     #[test]

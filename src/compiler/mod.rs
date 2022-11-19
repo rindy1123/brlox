@@ -12,7 +12,7 @@ use crate::{
 };
 use parser::Parser;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 #[derive(Clone)]
 struct Env {
@@ -219,8 +219,9 @@ impl Compiler {
         self.emit_byte(OpCode::OpPop, line);
     }
 
-    fn end_compiler(&mut self, line: usize) {
-        self.emit_byte(OpCode::OpReturn, line)
+    fn end_compiler(&mut self, line: usize) -> ObjFunction {
+        self.emit_byte(OpCode::OpReturn, line);
+        self.function.clone()
     }
 }
 
@@ -229,9 +230,9 @@ pub fn compile(source: &str) -> Result<ObjFunction, InterpretError> {
     let root_compiler = Compiler::new(FunctionType::Script);
     let mut parser = Parser::new(source, root_compiler);
     let mut compiler = parser.parse()?;
-    compiler.end_compiler(parser.previous.unwrap().line);
+    let function = compiler.end_compiler(parser.previous.unwrap().line);
     if DEBUG {
-        disassembler::Disassembler::disassemble_chunk(&compiler.function.chunk, "code".to_string());
+        disassembler::Disassembler::disassemble_chunk(&function.chunk, "code".to_string());
     }
-    Ok(compiler.function)
+    Ok(function)
 }

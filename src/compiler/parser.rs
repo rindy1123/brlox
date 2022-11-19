@@ -2,17 +2,14 @@ use crate::{
     chunk::OpCode,
     scan::{self, Source},
     token::{Token, TokenType},
-    value::{
-        object::{Obj, ObjFunction},
-        Value,
-    },
+    value::{object::Obj, Value},
     vm::InterpretError,
 };
 
 use super::{
     error_report,
     precedence::{self, ParseFn, Precedence},
-    Compiler,
+    Compiler, FunctionType,
 };
 
 pub struct Parser {
@@ -20,6 +17,7 @@ pub struct Parser {
     pub previous: Option<Token>,
     source: Source,
     compiler: Compiler,
+    enclosing: Vec<Compiler>,
 }
 
 impl Parser {
@@ -27,6 +25,7 @@ impl Parser {
         Parser {
             current: None,
             previous: None,
+            enclosing: Vec::new(),
             source,
             compiler,
         }
@@ -71,14 +70,7 @@ impl Parser {
             self.compiler.emit_byte(OpCode::OpNil, line);
         }
 
-        if !self.match_token_type(TokenType::Semicolon) {
-            error_report::report_error(
-                self.current.as_ref().unwrap(),
-                "Expect ';' after expression.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
         if self.compiler.is_local() {
             self.compiler.define_local_variable();
         } else {
@@ -89,11 +81,7 @@ impl Parser {
     }
 
     fn parse_variable(&mut self, message: &str) -> Result<usize, InterpretError> {
-        if !self.match_token_type(TokenType::Identifier) {
-            error_report::report_error(self.current.as_ref().unwrap(), message);
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::Identifier, message)?;
         self.compiler
             .declare_variable(self.previous.as_ref().unwrap())?;
         if self.compiler.is_local() {
@@ -106,10 +94,10 @@ impl Parser {
 
     fn statement(&mut self) -> Result<(), InterpretError> {
         match self.current.as_ref().unwrap().token_type {
-            // TokenType::Fun => {
-            //     self.advance()?;
-            //     self.fun_statement()
-            // }
+            TokenType::Fun => {
+                self.advance()?;
+                self.fun_statement()
+            }
             TokenType::Print => {
                 self.advance()?;
                 self.print_statement()
@@ -145,64 +133,54 @@ impl Parser {
             self.declaration()?;
         }
 
-        if !self.match_token_type(TokenType::RightBrace) {
-            error_report::report_error(self.current.as_ref().unwrap(), "Expect '}' after block.");
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()
+        self.consume(TokenType::RightBrace, "Expect '}' after block.")
     }
 
-    // fn fun_statement(&mut self) -> Result<(), InterpretError> {
-    //     let global = self.parse_variable("Expect function name.")?;
-    //     // mark as initialized to be able to be referenced in function body
-    //     self.mark_initialized();
-    //     self.parse_function(FunctionType::Function)?;
-    //     self.define_global_variable(global);
-    //     Ok(())
-    // }
-    //
-    // fn parse_function(&mut self, function_type: FunctionType) -> Result<(), InterpretError> {
-    //     let previous_function = self.function.clone();
-    //     let previous_function_type = self.function_type.clone();
-    //     self.function = ObjFunction::new();
-    //     self.function_type = function_type;
-    //     self.begin_scope();
-    //     if !self.match_token_type(TokenType::LeftParen) {
-    //         error_report::report_error(
-    //             self.current.as_ref().unwrap(),
-    //             "Expect '(' after function name.",
-    //         );
-    //         return Err(InterpretError::CompileError);
-    //     }
-    //     self.advance()?;
-    //     if !self.match_token_type(TokenType::RightParen) {
-    //         error_report::report_error(
-    //             self.current.as_ref().unwrap(),
-    //             "Expect ')' after parameters.",
-    //         );
-    //         return Err(InterpretError::CompileError);
-    //     }
-    //     self.advance()?;
-    //     if !self.match_token_type(TokenType::LeftBrace) {
-    //         error_report::report_error(
-    //             self.current.as_ref().unwrap(),
-    //             "Expect '{' before function body.",
-    //         );
-    //         return Err(InterpretError::CompileError);
-    //     }
-    //     self.advance()?;
-    //     self.block()?;
-    //     let token = self.previous.as_ref().unwrap();
-    //     let line = token.line;
-    //     self.compiler.emit_constant(
-    //         Value::Obj(Obj::Function(self.function.clone())),
-    //         self.current_chunk_as_mut(),
-    //         line,
-    //     );
-    //     self.function = previous_function;
-    //     self.function_type = previous_function_type;
-    //     Ok(())
-    // }
+    fn fun_statement(&mut self) -> Result<(), InterpretError> {
+        let global = self.parse_variable("Expect function name.")?;
+        // mark as initialized to be able to be referenced in function body
+        self.compiler.mark_initialized();
+        self.parse_function(FunctionType::Function)?;
+        let line = self.previous.as_ref().unwrap().line;
+        self.compiler.define_global_variable(global, line);
+        Ok(())
+    }
+
+    fn parse_function(&mut self, function_type: FunctionType) -> Result<(), InterpretError> {
+        let previous_compiler = self.compiler.clone();
+        self.enclosing.push(previous_compiler);
+        self.compiler = Compiler::new(function_type);
+        let function_name = self.previous.as_ref().unwrap().lexeme.clone();
+        self.compiler.function.name = function_name;
+
+        self.compiler.begin_scope();
+        self.parse_argument()?;
+        self.block()?;
+
+        let token = self.previous.as_ref().unwrap();
+        let line = token.line;
+        let function = Obj::Function(self.compiler.end_compiler(line));
+        self.compiler = self.enclosing.pop().unwrap();
+        self.compiler.emit_constant(Value::Obj(function), line);
+        Ok(())
+    }
+
+    fn parse_argument(&mut self) -> Result<(), InterpretError> {
+        self.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
+        if !self.match_token_type(TokenType::RightParen) {
+            loop {
+                self.compiler.function.arity += 1;
+                self.parse_variable("Expect parameter name.")?;
+                self.compiler.define_local_variable();
+                if !self.match_token_type(TokenType::Comma) {
+                    break;
+                }
+                self.advance()?;
+            }
+        }
+        self.consume(TokenType::RightParen, "Expect ')' after parameters.")?;
+        self.consume(TokenType::LeftBrace, "Expect '{' before function body.")
+    }
 
     /// The order of execution in for loop:
     /// 1. initialization
@@ -213,11 +191,7 @@ impl Parser {
     /// and start again from No.2
     fn for_statement(&mut self) -> Result<(), InterpretError> {
         self.compiler.begin_scope();
-        if !self.match_token_type(TokenType::LeftParen) {
-            error_report::report_error(self.current.as_ref().unwrap(), "Expect '(' after if.");
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::LeftParen, "Expect '(' after if.")?;
         self.for_loop_init()?;
         // For loop restarts after the initialization
         let loop_start = self.compiler.current_chunk_as_ref().code.len() - 1;
@@ -262,14 +236,7 @@ impl Parser {
         }
 
         self.expression()?;
-        if !self.match_token_type(TokenType::Semicolon) {
-            error_report::report_error(
-                self.current.as_ref().unwrap(),
-                "Expect ';' after condition.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after condition.")?;
 
         let line = self.previous.as_ref().unwrap().line;
         let jump = self
@@ -292,14 +259,7 @@ impl Parser {
         self.expression()?;
         let line = self.previous.as_ref().unwrap().line;
         self.compiler.emit_pop(line);
-        if !self.match_token_type(TokenType::RightParen) {
-            error_report::report_error(
-                self.current.as_ref().unwrap(),
-                "Expect ')' after condition.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
 
         let line = self.previous.as_ref().unwrap().line;
         // Back to the condition clause since the loop ends here.
@@ -330,23 +290,9 @@ impl Parser {
     }
 
     fn condition(&mut self) -> Result<(), InterpretError> {
-        if !self.match_token_type(TokenType::LeftParen) {
-            error_report::report_error(
-                self.current.as_ref().unwrap(),
-                "Expect '(' before condition.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::LeftParen, "Expect '(' before condition.")?;
         self.expression()?;
-        if !self.match_token_type(TokenType::RightParen) {
-            error_report::report_error(
-                self.current.as_ref().unwrap(),
-                "Expect ')' after condition.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")
     }
 
     fn if_statement(&mut self) -> Result<(), InterpretError> {
@@ -372,14 +318,7 @@ impl Parser {
 
     fn expression_statement(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
-        if !self.match_token_type(TokenType::Semicolon) {
-            error_report::report_error(
-                self.current.as_ref().unwrap(),
-                "Expect ';' after expression.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
         let line = self.previous.as_ref().unwrap().line;
         self.compiler.emit_pop(line);
         Ok(())
@@ -387,11 +326,7 @@ impl Parser {
 
     fn print_statement(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
-        if !self.match_token_type(TokenType::Semicolon) {
-            error_report::report_error(self.current.as_ref().unwrap(), "Expect ';' after value.");
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
         let line = self.previous.as_ref().unwrap().line;
         self.compiler.emit_byte(OpCode::OpPrint, line);
         Ok(())
@@ -408,6 +343,14 @@ impl Parser {
         }
         self.current = Some(token);
         Ok(())
+    }
+
+    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<(), InterpretError> {
+        if !self.match_token_type(token_type) {
+            error_report::report_error(self.current.as_ref().unwrap(), message);
+            return Err(InterpretError::CompileError);
+        }
+        self.advance()
     }
 
     fn expression(&mut self) -> Result<(), InterpretError> {
@@ -487,14 +430,7 @@ impl Parser {
 
     fn grouping(&mut self) -> Result<(), InterpretError> {
         self.expression()?;
-        if !self.match_token_type(TokenType::RightParen) {
-            error_report::report_error(
-                self.current.as_ref().unwrap(),
-                "Expect ')' after expression.",
-            );
-            return Err(InterpretError::CompileError);
-        }
-        self.advance()
+        self.consume(TokenType::RightParen, "Expect ')' after expression.")
     }
 
     fn unary(&mut self) -> Result<(), InterpretError> {
