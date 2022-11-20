@@ -4,7 +4,10 @@ use crate::{
     chunk::OpCode,
     compiler::compile,
     disassembler,
-    value::{object::ObjFunction, Value},
+    value::{
+        object::{Obj, ObjFunction},
+        Value,
+    },
 };
 
 struct CallFrame {
@@ -16,11 +19,11 @@ struct CallFrame {
 }
 
 impl CallFrame {
-    fn new(function: ObjFunction) -> Self {
+    fn new(function: ObjFunction, frame_pointer: usize) -> Self {
         CallFrame {
             function,
+            frame_pointer,
             ip: 0,
-            frame_pointer: 0,
         }
     }
 }
@@ -51,7 +54,7 @@ impl VM {
             if DEBUG {
                 println!("      ");
                 for slot in self.stack.clone() {
-                    println!("[ {:?} ]", slot);
+                    println!("[ {:#?} ]", slot);
                 }
                 disassembler::disassemble_instruction(
                     frame.ip,
@@ -62,7 +65,12 @@ impl VM {
             frame.ip += 1;
             match instruction {
                 OpCode::OpReturn => {
-                    return Ok(());
+                    let result = self.stack.pop().unwrap();
+                    self.frames.pop();
+                    if self.frames.len() == 0 {
+                        return Ok(());
+                    }
+                    self.stack.push(result);
                 }
                 OpCode::OpNegate => match self.stack.last().unwrap().clone() {
                     Value::Number(number) => {
@@ -70,8 +78,9 @@ impl VM {
                         self.stack.push(Value::Number(-number));
                     }
                     _ => {
-                        Self::runtime_error(frame, "Operand must be a number.");
-                        return Err(InterpretError::RuntimeError);
+                        let message = "Operand must be a number.".to_string();
+                        let err = InterpretError::RuntimeError(message);
+                        return Err(err);
                     }
                 },
                 OpCode::OpConstant { index } => {
@@ -107,8 +116,9 @@ impl VM {
                             self.stack.push(value.clone());
                         }
                         _ => {
-                            Self::runtime_error(frame, &format!("Undefined variable '{}'", name));
-                            return Err(InterpretError::RuntimeError);
+                            let message = format!("Undefined variable '{}'", name);
+                            let err = InterpretError::RuntimeError(message);
+                            return Err(err);
                         }
                     }
                 }
@@ -121,8 +131,9 @@ impl VM {
                     match self.globals.insert(name.clone(), value) {
                         None => {
                             self.globals.remove(&name);
-                            Self::runtime_error(frame, &format!("Undefined variable '{}'", name));
-                            return Err(InterpretError::RuntimeError);
+                            let message = format!("Undefined variable '{}'", name);
+                            let err = InterpretError::RuntimeError(message);
+                            return Err(err);
                         }
                         _ => {}
                     }
@@ -148,7 +159,12 @@ impl VM {
                 | OpCode::OpDivide
                 | OpCode::OpGreater
                 | OpCode::OpLess => {
-                    Self::binary_operation(&mut self.stack, instruction.clone(), frame)?;
+                    Self::binary_operation(&mut self.stack, instruction)?;
+                }
+                OpCode::OpCall { arg_count } => {
+                    let function = self.stack[self.stack.len() - 1 - arg_count].clone();
+                    let arg_count = arg_count.clone();
+                    self.call_value(function, arg_count)?;
                 }
             }
         }
@@ -156,8 +172,7 @@ impl VM {
 
     fn binary_operation(
         stack: &mut Vec<Value>,
-        binary_operator: OpCode,
-        frame: &CallFrame,
+        binary_operator: &OpCode,
     ) -> Result<(), InterpretError> {
         let stack_len = stack.len();
         match (&stack[stack_len - 1], &stack[stack_len - 2]) {
@@ -184,8 +199,9 @@ impl VM {
                     | OpCode::OpDivide
                     | OpCode::OpGreater
                     | OpCode::OpLess => {
-                        Self::runtime_error(frame, "You cannot use that operator for strings.");
-                        return Err(InterpretError::RuntimeError);
+                        let message = "You cannot use that operator for strings.".to_string();
+                        let err = InterpretError::RuntimeError(message);
+                        return Err(err);
                     }
                     _ => panic!("We got {binary_operator:?}."),
                 };
@@ -195,16 +211,55 @@ impl VM {
                 return Ok(());
             }
             (_, _) => {
-                Self::runtime_error(frame, "Operands must be two numbers or two strings.");
-                return Err(InterpretError::RuntimeError);
+                let message = "Operands must be two numbers or two strings.".to_string();
+                let err = InterpretError::RuntimeError(message);
+                return Err(err);
             }
         }
     }
 
-    fn runtime_error(frame: &CallFrame, message: &str) {
+    fn call_value(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpretError> {
+        if let Value::Obj(obj) = callee {
+            match obj {
+                Obj::Function(function) => {
+                    return self.call(function, arg_count);
+                }
+            }
+        }
+        let message = "Can only call functions and classes.".to_string();
+        let err = InterpretError::RuntimeError(message);
+        return Err(err);
+    }
+
+    fn call(&mut self, function: ObjFunction, arg_count: usize) -> Result<(), InterpretError> {
+        let arity = function.arity;
+        if arg_count != arity {
+            let message = format!("Expected {arity} arguments but got {arg_count}.");
+            let err = InterpretError::RuntimeError(message);
+            return Err(err);
+        }
+        if self.frames.len() == FRAMES_MAX {
+            let message = "Stack overflow.".to_string();
+            let err = InterpretError::RuntimeError(message);
+            return Err(err);
+        }
+        let stack_size = self.stack.len() - 1;
+        let frame = CallFrame::new(function, stack_size - arg_count);
+        self.frames.push(frame);
+        Ok(())
+    }
+
+    fn runtime_error(&self, message: &str) {
         println!("{}", message);
-        let line = frame.function.chunk.lines[frame.ip];
-        eprintln!("[line {}] in script", line)
+        for frame in self.frames.iter().rev() {
+            let function = &frame.function;
+            eprint!("[line {}] in ", function.chunk.lines[frame.ip]);
+            if function.name.len() == 0 {
+                eprintln!("script");
+            } else {
+                eprintln!("{}()", function.name);
+            }
+        }
     }
 }
 
@@ -219,15 +274,24 @@ fn is_falsey(value: Value) -> bool {
 pub fn interpret(vm: &mut VM, source: &str) -> Result<(), InterpretError> {
     let function = compile(source)?;
 
-    let frame = CallFrame::new(function);
+    let frame = CallFrame::new(function, 0);
     vm.frames.push(frame);
-    vm.run()
+    if let Err(err) = vm.run() {
+        match err {
+            InterpretError::RuntimeError(ref message) => {
+                vm.runtime_error(&message);
+                return Err(err);
+            }
+            _ => panic!("Not supposed to raise other than RuntimeError"),
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
 pub enum InterpretError {
     CompileError,
-    RuntimeError,
+    RuntimeError(String),
 }
 
 #[cfg(test)]
@@ -289,68 +353,56 @@ mod tests {
 
         #[test]
         fn test_add_num() {
-            let function = ObjFunction::new();
-            let frame = CallFrame::new(function);
             let mut stack = Vec::new();
             stack.push(Value::Number(1.2));
             stack.push(Value::Number(3.4));
-            VM::binary_operation(&mut stack, OpCode::OpAdd, &frame).unwrap();
+            VM::binary_operation(&mut stack, &OpCode::OpAdd).unwrap();
             assert_eq!(stack[0].as_number(), 4.6);
         }
 
         #[test]
         fn test_add_string() {
-            let function = ObjFunction::new();
-            let frame = CallFrame::new(function);
             let mut stack = Vec::new();
             stack.push(Value::LString("AAA".to_string()));
             stack.push(Value::LString("BBB".to_string()));
-            VM::binary_operation(&mut stack, OpCode::OpAdd, &frame).unwrap();
+            VM::binary_operation(&mut stack, &OpCode::OpAdd).unwrap();
             assert_eq!(stack[0].as_string(), "AAABBB".to_string());
         }
 
         #[test]
         fn test_subtract() {
-            let function = ObjFunction::new();
-            let frame = CallFrame::new(function);
             let mut stack = Vec::new();
             stack.push(Value::Number(1.2));
             stack.push(Value::Number(3.4));
-            VM::binary_operation(&mut stack, OpCode::OpSubtract, &frame).unwrap();
+            VM::binary_operation(&mut stack, &OpCode::OpSubtract).unwrap();
             assert_eq!(stack[0].as_number(), -2.2);
         }
 
         #[test]
         fn test_multiply() {
-            let function = ObjFunction::new();
-            let frame = CallFrame::new(function);
             let mut stack = Vec::new();
             stack.push(Value::Number(2.0));
             stack.push(Value::Number(3.4));
-            VM::binary_operation(&mut stack, OpCode::OpMultiply, &frame).unwrap();
+            VM::binary_operation(&mut stack, &OpCode::OpMultiply).unwrap();
             assert_eq!(stack[0].as_number(), 6.8);
         }
 
         #[test]
         fn test_divide() {
-            let function = ObjFunction::new();
-            let frame = CallFrame::new(function);
             let mut stack = Vec::new();
             stack.push(Value::Number(6.0));
             stack.push(Value::Number(2.0));
-            VM::binary_operation(&mut stack, OpCode::OpDivide, &frame).unwrap();
+            VM::binary_operation(&mut stack, &OpCode::OpDivide).unwrap();
             assert_eq!(stack[0].as_number(), 3.0);
         }
 
         #[test]
         #[should_panic(expected = "We got OpReturn.")]
         fn test_invalid_opcode() {
-            let function = ObjFunction::new();
-            let frame = CallFrame::new(function);
             let mut stack = Vec::new();
             stack.push(Value::Number(6.0));
             stack.push(Value::Number(2.0));
-            VM::binary_operation(&mut stack, OpCode::OpReturn, &frame).unwrap();
+            VM::binary_operation(&mut stack, &OpCode::OpReturn).unwrap();
         }
     }
 }

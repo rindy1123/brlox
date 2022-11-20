@@ -157,8 +157,7 @@ impl Parser {
         self.parse_argument()?;
         self.block()?;
 
-        let token = self.previous.as_ref().unwrap();
-        let line = token.line;
+        let line = self.previous.as_ref().unwrap().line;
         let function = Obj::Function(self.compiler.end_compiler(line));
         self.compiler = self.enclosing.pop().unwrap();
         self.compiler.emit_constant(Value::Obj(function), line);
@@ -465,7 +464,31 @@ impl Parser {
             ParseFn::Variable => self.variable(can_assign),
             ParseFn::And => self.and(),
             ParseFn::Or => self.or(),
+            ParseFn::Call => self.call(),
         }
+    }
+
+    fn call(&mut self) -> Result<(), InterpretError> {
+        let arg_count = self.arg_list()?;
+        let line = self.previous.as_ref().unwrap().line;
+        self.compiler.emit_byte(OpCode::OpCall { arg_count }, line);
+        Ok(())
+    }
+
+    fn arg_list(&mut self) -> Result<usize, InterpretError> {
+        let mut arg_count = 0;
+        if !self.match_token_type(TokenType::RightParen) {
+            loop {
+                self.expression()?;
+                arg_count += 1;
+                if !self.match_token_type(TokenType::Comma) {
+                    break;
+                }
+                self.advance()?;
+            }
+        }
+        self.consume(TokenType::RightParen, "Expect ')' after arguments.")?;
+        Ok(arg_count)
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<(), InterpretError> {

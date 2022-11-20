@@ -38,7 +38,7 @@ fn run_file(path: &Path) {
     if let Err(e) = interpret(&mut vm, &source) {
         match e {
             InterpretError::CompileError => exit(65),
-            InterpretError::RuntimeError => exit(70),
+            InterpretError::RuntimeError { .. } => exit(70),
         }
     };
 }

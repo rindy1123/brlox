@@ -1,5 +1,7 @@
-fun areWeHavingItYet() {
-  print "Yes we are!";
+fun areWeHavingItYet(a, b) {
+  print a;
+  print b;
+  print a + b;
 }
 
-print areWeHavingItYet;
+print areWeHavingItYet(1, 4);

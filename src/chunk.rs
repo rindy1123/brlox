@@ -23,6 +23,7 @@ pub enum OpCode {
     OpGetLocal { index: usize },
     OpSetLocal { index: usize },
     OpConstant { index: usize },
+    OpCall { arg_count: usize },
     OpJumpIfFalse { offset: usize },
     OpJump { offset: usize },
     OpJumpBack { offset: usize },

@@ -7,14 +7,17 @@ use crate::{
     disassembler,
     scan::Source,
     token::Token,
-    value::{object::ObjFunction, Value},
+    value::{
+        object::{Obj, ObjFunction},
+        Value,
+    },
     InterpretError,
 };
 use parser::Parser;
 
 const DEBUG: bool = false;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Env {
     // Local Variables are stored here
     locals: Vec<Local>,
@@ -25,10 +28,6 @@ struct Env {
 
 impl Env {
     fn new() -> Env {
-        // TODO: consider TokenType
-        // let token = Token::new(TokenType::EOF, String::new(), 0);
-        // let local = Local::new(token, Some(0));
-        // let locals = vec![local];
         Env {
             locals: Vec::new(),
             scope_depth: 0,
@@ -37,7 +36,7 @@ impl Env {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FunctionType {
     Function,
     Script,
@@ -64,7 +63,7 @@ impl Local {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Compiler {
     env: Env,
     pub function: ObjFunction,
@@ -156,7 +155,7 @@ impl Compiler {
                     );
                     return Err(InterpretError::CompileError);
                 }
-                return Ok(Some(locals_len - 1 - i));
+                return Ok(Some(locals_len - i));
             }
         }
 
@@ -220,6 +219,7 @@ impl Compiler {
     }
 
     fn end_compiler(&mut self, line: usize) -> ObjFunction {
+        self.emit_byte(OpCode::OpNil, line);
         self.emit_byte(OpCode::OpReturn, line);
         self.function.clone()
     }
@@ -227,7 +227,9 @@ impl Compiler {
 
 pub fn compile(source: &str) -> Result<ObjFunction, InterpretError> {
     let source = Source::new(source.to_string());
-    let root_compiler = Compiler::new(FunctionType::Script);
+    let mut root_compiler = Compiler::new(FunctionType::Script);
+    let function = Obj::Function(root_compiler.function.clone());
+    root_compiler.emit_constant(Value::Obj(function), 0);
     let mut parser = Parser::new(source, root_compiler);
     let mut compiler = parser.parse()?;
     let function = compiler.end_compiler(parser.previous.unwrap().line);

@@ -51,14 +51,15 @@ pub enum ParseFn {
     String,
     And,
     Or,
+    Call,
 }
 
 pub fn get_rule(operator_type: &TokenType) -> ParseRule {
     match operator_type {
         TokenType::LeftParen => ParseRule {
             prefix: Some(ParseFn::Grouping),
-            infix: None,
-            precedence: Precedence::None,
+            infix: Some(ParseFn::Call),
+            precedence: Precedence::Call,
         },
         TokenType::RightParen => ParseRule {
             prefix: None,
