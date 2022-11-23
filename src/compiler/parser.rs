@@ -98,6 +98,10 @@ impl Parser {
                 self.advance()?;
                 self.fun_statement()
             }
+            TokenType::Return => {
+                self.advance()?;
+                self.return_statement()
+            }
             TokenType::Print => {
                 self.advance()?;
                 self.print_statement()
@@ -134,6 +138,27 @@ impl Parser {
         }
 
         self.consume(TokenType::RightBrace, "Expect '}' after block.")
+    }
+
+    fn return_statement(&mut self) -> Result<(), InterpretError> {
+        if let FunctionType::Script = self.compiler.function_type {
+            error_report::report_error(
+                self.current.as_ref().unwrap(),
+                "Can't return from top-level code.",
+            );
+            return Err(InterpretError::CompileError);
+        }
+        if self.match_token_type(TokenType::Semicolon) {
+            let line = self.previous.as_ref().unwrap().line;
+            self.compiler.emit_byte(OpCode::OpNil, line);
+            self.compiler.emit_byte(OpCode::OpReturn, line);
+            return Ok(());
+        }
+        self.expression()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after return value.")?;
+        let line = self.previous.as_ref().unwrap().line;
+        self.compiler.emit_byte(OpCode::OpReturn, line);
+        Ok(())
     }
 
     fn fun_statement(&mut self) -> Result<(), InterpretError> {
