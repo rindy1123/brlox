@@ -1,15 +1,16 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::SystemTime};
 
 use crate::{
     chunk::OpCode,
     compiler::compile,
     disassembler,
     value::{
-        object::{Obj, ObjFunction},
+        object::{NativeFunction, Obj, ObjFunction, ObjNative},
         Value,
     },
 };
 
+#[derive(Debug)]
 struct CallFrame {
     function: ObjFunction,
     /// Instruction Pointer
@@ -40,10 +41,12 @@ const FRAMES_MAX: usize = 64;
 
 impl VM {
     pub fn new() -> VM {
+        let mut globals = HashMap::new();
+        globals.insert("clock".to_string(), Self::define_native(Self::clock));
         VM {
             stack: Vec::with_capacity(STACK_MAX),
             frames: Vec::with_capacity(FRAMES_MAX),
-            globals: HashMap::new(),
+            globals,
         }
     }
 
@@ -66,7 +69,9 @@ impl VM {
             match instruction {
                 OpCode::OpReturn => {
                     let result = self.stack.pop().unwrap();
-                    self.frames.pop();
+                    let previous_frame_pointer = self.frames.pop().unwrap().frame_pointer;
+                    // discard the values the frame had
+                    self.stack.drain(previous_frame_pointer..);
                     if self.frames.len() == 0 {
                         return Ok(());
                     }
@@ -164,7 +169,8 @@ impl VM {
                 OpCode::OpCall { arg_count } => {
                     let function = self.stack[self.stack.len() - 1 - arg_count].clone();
                     let arg_count = arg_count.clone();
-                    self.call_value(function, arg_count)?;
+                    let ip = frame.ip;
+                    self.call_value(function, arg_count, ip)?;
                 }
             }
         }
@@ -218,11 +224,25 @@ impl VM {
         }
     }
 
-    fn call_value(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpretError> {
+    fn call_value(
+        &mut self,
+        callee: Value,
+        arg_count: usize,
+        ip: usize,
+    ) -> Result<(), InterpretError> {
         if let Value::Obj(obj) = callee {
             match obj {
                 Obj::Function(function) => {
                     return self.call(function, arg_count);
+                }
+                Obj::NativeFunction(function) => {
+                    let native_function = function.native_function;
+                    let result = native_function(arg_count, ip);
+                    let stack_tail = self.stack.len() - 1;
+                    // remove argument values and function from stack
+                    self.stack.drain((stack_tail - arg_count)..);
+                    self.stack.push(result);
+                    return Ok(());
                 }
             }
         }
@@ -247,6 +267,20 @@ impl VM {
         let frame = CallFrame::new(function, stack_size - arg_count);
         self.frames.push(frame);
         Ok(())
+    }
+
+    fn define_native(function: NativeFunction) -> Value {
+        let obj_native = ObjNative::new(function);
+        let native_function = Obj::NativeFunction(obj_native);
+        Value::Obj(native_function)
+    }
+
+    /// Native Function
+    fn clock(_: usize, _: usize) -> Value {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        Value::Number(now.as_secs_f64())
     }
 
     fn runtime_error(&self, message: &str) {
