@@ -372,6 +372,11 @@ mod tests {
         fn test_function() {
             assert!(execute_file("samples/function.lox").is_ok())
         }
+
+        #[test]
+        fn test_closure() {
+            assert!(execute_file("samples/closure.lox").is_ok())
+        }
     }
 
     #[test]

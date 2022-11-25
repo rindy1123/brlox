@@ -71,12 +71,8 @@ impl Parser {
         }
 
         self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
-        if self.compiler.is_local() {
-            self.compiler.define_local_variable();
-        } else {
-            let line = self.previous.as_ref().unwrap().line;
-            self.compiler.define_global_variable(global, line);
-        }
+        let line = self.previous.as_ref().unwrap().line;
+        self.compiler.define_variable(global, line);
         Ok(())
     }
 
@@ -167,7 +163,7 @@ impl Parser {
         self.compiler.mark_initialized();
         self.parse_function(FunctionType::Function)?;
         let line = self.previous.as_ref().unwrap().line;
-        self.compiler.define_global_variable(global, line);
+        self.compiler.define_variable(global, line);
         Ok(())
     }
 

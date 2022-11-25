@@ -180,6 +180,14 @@ impl Compiler {
         self.emit_byte(OpCode::OpDefineGlobal { index: global }, line);
     }
 
+    fn define_variable(&mut self, global: usize, line: usize) {
+        if self.is_local() {
+            self.define_local_variable();
+        } else {
+            self.define_global_variable(global, line);
+        }
+    }
+
     /// Patch the jump instruction
     /// jump_start is the jump instruction's address which emit_jump returns
     fn patch_jump(&mut self, jump_start: usize) {
